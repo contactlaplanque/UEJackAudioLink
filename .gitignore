@@ -1,0 +1,50 @@
+# Unreal Engine 5 plugin – .gitignore
+
+# --- Unreal Engine build outputs ------------------------------------------------
+Binaries/
+DerivedDataCache/
+Intermediate/
+Saved/
+
+# If you have ThirdParty libraries you want kept, un-ignore that folder:
+# !ThirdParty/
+
+# --- Unreal Build Tool (UBT) intermediate files ---------------------------------
+*.generated.*
+
+# --- Packaging ------------------------------------------------------------------
+*.pak
+*.pdb
+*.dmp
+
+# --- IDEs & Editors --------------------------------------------------------------
+# Visual Studio
+.vs/
+*.sln
+*.suo
+*.vcxproj*
+*.opensdf
+*.VC.db
+*.VC.opendb
+
+# Visual Studio Code
+.vscode/
+*.code-workspace
+
+# JetBrains Rider
+.idea/
+*.sln.iml
+
+# --- Operating System clutter ----------------------------------------------------
+.DS_Store
+Thumbs.db
+
+# --- Misc ------------------------------------------------------------------------
+# Crash logs
+*.log
+# Unreal Insights traces
+*.utrace
+
+# --- Plugin-specific patterns ----------------------------------------------------
+Plugins/*/Binaries/
+Plugins/*/Intermediate/ 
