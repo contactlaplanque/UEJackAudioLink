@@ -28,8 +28,6 @@ While it will ultimately power *akM-control* (a spatial-audio composition tool),
 └───────────────────┘
 ```
 
-An optional companion editor module (`UEJackAudioLinkEditor`) will register a Slate/ImGui **Level Meter** tab that subscribes to the plugin’s `FOnJackLevelsUpdated` delegate.
-
 ---
 
 ## 3. Source-Tree Layout (planned)
