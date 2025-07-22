@@ -4,8 +4,7 @@
       -Package="$env:PACKAGE_DIR" `
       -TargetPlatforms=Win64 `
       -Configuration=Development `
-      -VS2022 `
-      -NoCleanStage
+      -VS2022
 
 if ($LASTEXITCODE -ne 0) { throw "BuildPlugin failed with code $LASTEXITCODE" }
 
