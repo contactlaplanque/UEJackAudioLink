@@ -30,8 +30,28 @@ Set-Content -Path $testProjectFile -Value $uprojectContent
 
 # Copy plugin source from checkout directory (not the built package)
 Write-Host "--- Copying plugin source to test project ---"
-$sourcePluginDir = $env:TEAMCITY_BUILD_CHECKOUTDIR
-Copy-Item -Path $sourcePluginDir -Destination $pluginDir -Recurse -Force -Exclude @("Build", ".git", "TeamCity")
+$sourcePluginDir = Get-Location  # Current working directory is the checkout
+Write-Host "Source plugin directory: $sourcePluginDir"
+Write-Host "Target plugin directory: $pluginDir"
+
+# Copy all source files except build artifacts
+Copy-Item -Path "$sourcePluginDir\*" -Destination $pluginDir -Recurse -Force -Exclude @("Build", ".git", "TeamCity")
+
+# Verify the plugin was copied
+Write-Host "--- Verifying plugin copy ---"
+$pluginFile = Join-Path $pluginDir "UEJackAudioLink.uplugin"
+if (Test-Path $pluginFile) {
+    Write-Host "OK: Plugin file found at $pluginFile"
+} else {
+    Write-Host "ERROR: Plugin file not found at $pluginFile"
+    Write-Host "Contents of plugin directory:"
+    if (Test-Path $pluginDir) {
+        Get-ChildItem -Path $pluginDir -Recurse | ForEach-Object { Write-Host "  $($_.FullName)" }
+    } else {
+        Write-Host "  Plugin directory does not exist"
+    }
+    throw "Plugin copy failed"
+}
 
 Write-Host "--- Building test project ---"
 $logFile = Join-Path $env:PACKAGE_DIR "BuildTest.log"
