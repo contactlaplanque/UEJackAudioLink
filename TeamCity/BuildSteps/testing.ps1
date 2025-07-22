@@ -99,18 +99,22 @@ if (Test-Path $pluginFile) {
     throw "Plugin copy failed"
 }
 
-Write-Host "--- Building test project ---"
-$logFile = Join-Path $env:PACKAGE_DIR "BuildTest.log"
+Write-Host "--- Skipping build (using pre-built plugin from packaging step) ---"
+# The plugin was already built in the packaging step, so we can use those binaries directly
 
+Write-Host "--- Building plugin modules for testing ---"
+# Only build the plugin modules, not the entire editor
 & "$env:UE_PATH\Engine\Binaries\ThirdParty\DotNet\8.0.300\win-x64\dotnet.exe" `
     "$env:UE_PATH\Engine\Binaries\DotNET\UnrealBuildTool\UnrealBuildTool.dll" `
-    Development Win64 `
+    UnrealEditor `
+    Win64 `
+    Development `
     -Project="$testProjectFile" `
-    -TargetType=Editor `
-    -Progress -NoHotReloadFromIDE
+    -Plugin="$pluginDir\UEJackAudioLink.uplugin" `
+    -Rocket
 
 if ($LASTEXITCODE -ne 0) {
-    throw "Failed to build test project with code $LASTEXITCODE"
+    throw "Failed to build plugin modules with code $LASTEXITCODE"
 }
 
 Write-Host "--- Running automation tests ---"
