@@ -1,6 +1,6 @@
-$uproject = Join-Path "%env.PACKAGE_DIR%" "HostProject\HostProject.uproject"
+$uproject = Join-Path "$env:PACKAGE_DIR" "HostProject\HostProject.uproject"
 
-& "%env.UE_PATH%\Engine\Binaries\Win64\UnrealEditor-Cmd.exe" `
+& "$env:UE_PATH\Engine\Binaries\Win64\UnrealEditor-Cmd.exe" `
       $uproject `
       -unattended -nopause -nullrhi -nosound -log `
       -ExecCmds="Automation RunTests UEJackAudioLink.*; Quit"

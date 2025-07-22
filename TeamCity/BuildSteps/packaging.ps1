@@ -1,7 +1,7 @@
-& "%env.UE_PATH%\Engine\Build\BatchFiles\RunUAT.bat" `
+& "$env:UE_PATH\Engine\Build\BatchFiles\RunUAT.bat" `
       BuildPlugin `
-      -Plugin="%env.PLUGIN_FILE%" `
-      -Package="%env.PACKAGE_DIR%" `
+      -Plugin="$env:PLUGIN_FILE" `
+      -Package="$env:PACKAGE_DIR" `
       -TargetPlatforms=Win64 `
       -Configuration=Development `
       -VS2022 `
