@@ -5,8 +5,7 @@
       -TargetPlatforms=Win64 `
       -Configuration=Development `
       -VS2022 `
-      -NoCleanStage `
-      -Rocket                              # strip editor-only symbols
+      -NoCleanStage
 
 if ($LASTEXITCODE -ne 0) { throw "BuildPlugin failed with code $LASTEXITCODE" }
 
