@@ -44,11 +44,32 @@ $itemsToCopy = @("Source", "Resources", "UEJackAudioLink.uplugin")
 foreach ($item in $itemsToCopy) {
     $sourcePath = Join-Path $sourcePluginDir $item
     if (Test-Path $sourcePath) {
-        Write-Host "Copying $item..."
-        Copy-Item -Path $sourcePath -Destination $pluginDir -Recurse -Force
+        Write-Host "Copying $item from $sourcePath to $pluginDir..."
+        
+        if ($item -eq "UEJackAudioLink.uplugin") {
+            # Copy the plugin file directly
+            Copy-Item -Path $sourcePath -Destination $pluginDir -Force
+        } else {
+            # Copy directories
+            $targetPath = Join-Path $pluginDir $item
+            Copy-Item -Path $sourcePath -Destination $targetPath -Recurse -Force
+        }
+        
+        Write-Host "  Copied successfully"
     } else {
         Write-Host "Warning: $item not found at $sourcePath"
     }
+}
+
+# Show what was actually copied
+Write-Host "--- Contents after copy ---"
+if (Test-Path $pluginDir) {
+    Get-ChildItem -Path $pluginDir -Recurse | ForEach-Object { 
+        $relativePath = $_.FullName.Replace($pluginDir, "")
+        Write-Host "  $relativePath"
+    }
+} else {
+    Write-Host "Plugin directory doesn't exist!"
 }
 
 # Verify the plugin was copied
