@@ -6,6 +6,11 @@ $pluginDir = Join-Path $testProjectDir "Plugins\UEJackAudioLink"
 Write-Host "--- Creating test project ---"
 Write-Host "Test project dir: $testProjectDir"
 
+# Clean up any existing test project
+if (Test-Path $testProjectDir) {
+    Remove-Item -Path $testProjectDir -Recurse -Force
+}
+
 # Create directory structure
 New-Item -Path $testProjectDir -ItemType Directory -Force
 New-Item -Path (Join-Path $testProjectDir "Plugins") -ItemType Directory -Force
@@ -34,14 +39,34 @@ $sourcePluginDir = Get-Location  # Current working directory is the checkout
 Write-Host "Source plugin directory: $sourcePluginDir"
 Write-Host "Target plugin directory: $pluginDir"
 
-# Copy all source files except build artifacts
-Copy-Item -Path "$sourcePluginDir\*" -Destination $pluginDir -Recurse -Force -Exclude @("Build", ".git", "TeamCity")
+# Copy only the essential plugin files
+$itemsToCopy = @("Source", "Resources", "UEJackAudioLink.uplugin")
+foreach ($item in $itemsToCopy) {
+    $sourcePath = Join-Path $sourcePluginDir $item
+    if (Test-Path $sourcePath) {
+        Write-Host "Copying $item..."
+        Copy-Item -Path $sourcePath -Destination $pluginDir -Recurse -Force
+    } else {
+        Write-Host "Warning: $item not found at $sourcePath"
+    }
+}
 
 # Verify the plugin was copied
 Write-Host "--- Verifying plugin copy ---"
 $pluginFile = Join-Path $pluginDir "UEJackAudioLink.uplugin"
 if (Test-Path $pluginFile) {
     Write-Host "OK: Plugin file found at $pluginFile"
+    
+    # Check for Source directory
+    $sourceDir = Join-Path $pluginDir "Source"
+    if (Test-Path $sourceDir) {
+        Write-Host "OK: Source directory found"
+        Write-Host "Source contents:"
+        Get-ChildItem -Path $sourceDir | ForEach-Object { Write-Host "  $($_.Name)" }
+    } else {
+        Write-Host "ERROR: Source directory not found"
+        throw "Plugin Source directory missing"
+    }
 } else {
     Write-Host "ERROR: Plugin file not found at $pluginFile"
     Write-Host "Contents of plugin directory:"
