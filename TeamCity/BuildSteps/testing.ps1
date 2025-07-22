@@ -10,20 +10,13 @@ Write-Host "Test project dir: $testProjectDir"
 New-Item -Path $testProjectDir -ItemType Directory -Force
 New-Item -Path (Join-Path $testProjectDir "Plugins") -ItemType Directory -Force
 
-# Create minimal .uproject file
+# Create minimal .uproject file (no custom modules)
 $uprojectContent = @"
 {
     "FileVersion": 3,
     "EngineAssociation": "5.6",
     "Category": "",
     "Description": "",
-    "Modules": [
-        {
-            "Name": "TestProject",
-            "Type": "Runtime",
-            "LoadingPhase": "Default"
-        }
-    ],
     "Plugins": [
         {
             "Name": "UEJackAudioLink",
@@ -35,15 +28,10 @@ $uprojectContent = @"
 
 Set-Content -Path $testProjectFile -Value $uprojectContent
 
-# Copy our plugin to the test project
+# Copy plugin source from checkout directory (not the built package)
 Write-Host "--- Copying plugin source to test project ---"
-Copy-Item -Path $env:PACKAGE_DIR -Destination $pluginDir -Recurse -Force
-
-# Remove the intermediate build files to force a fresh compile
-$pluginIntermediateDir = Join-Path $pluginDir "Intermediate"
-if (Test-Path $pluginIntermediateDir) {
-    Remove-Item -Path $pluginIntermediateDir -Recurse -Force
-}
+$sourcePluginDir = $env:TEAMCITY_BUILD_CHECKOUTDIR
+Copy-Item -Path $sourcePluginDir -Destination $pluginDir -Recurse -Force -Exclude @("Build", ".git", "TeamCity")
 
 Write-Host "--- Building test project ---"
 $logFile = Join-Path $env:PACKAGE_DIR "BuildTest.log"
