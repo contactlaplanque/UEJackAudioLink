@@ -26,8 +26,9 @@ public class UEJackAudioLink : ModuleRules
 			new string[]
 			{
 				"Core",
-				"UEJackAudioLinkLibrary",
-				"Projects"
+				"Projects",
+				"Slate",
+				"SlateCore"
 				// ... add other public dependencies that you statically link with here ...
 			}
 			);
@@ -36,10 +37,25 @@ public class UEJackAudioLink : ModuleRules
 		PrivateDependencyModuleNames.AddRange(
 			new string[]
 			{
+				"ApplicationCore",
+				"Engine",
+				"CoreUObject",
+				"DeveloperSettings",
+				"Settings"
 				// ... add private dependencies that you statically link with here ...	
 			}
 			);
 		
+		if (Target.bBuildEditor)
+		{
+			PrivateDependencyModuleNames.AddRange(
+				new string[]
+				{
+					"LevelEditor",
+					"EditorStyle",
+					"WorkspaceMenuStructure"
+				});
+		}
 		
 		DynamicallyLoadedModuleNames.AddRange(
 			new string[]

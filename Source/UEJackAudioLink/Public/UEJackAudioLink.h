@@ -2,6 +2,7 @@
 
 #pragma once
 
+#include "CoreMinimal.h"
 #include "Modules/ModuleManager.h"
 
 class FUEJackAudioLinkModule : public IModuleInterface
@@ -12,7 +13,20 @@ public:
 	virtual void StartupModule() override;
 	virtual void ShutdownModule() override;
 
+	// Status text is obtained directly via binding, so no explicit refresh function.
+
+	/** Slate Tab spawn function */
+	TSharedRef<class SDockTab> OnSpawnPluginTab(const class FSpawnTabArgs& SpawnTabArgs);
+
+	/** Returns the status text to display */
+	FText GetStatusText() const;
+
+	/** Callback when the restart button is clicked */
+	FReply OnRestartServerClicked();
+
 private:
-	/** Handle to the test dll we will load */
-	void*	ExampleLibraryHandle;
+	/** Cached text block showing the status */
+	TSharedPtr<class STextBlock> StatusTextBlock;
+
+	// No timer handle needed as Slate bindings update automatically.
 };
