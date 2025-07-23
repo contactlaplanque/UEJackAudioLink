@@ -9,9 +9,15 @@ public class UEJackAudioLinkTests : ModuleRules
         PublicDependencyModuleNames.AddRange(new[]
         {
             "Core",
+            "CoreUObject",
             "UEJackAudioLink"      // we want to test the runtime module
         });
 
-        PrivateDependencyModuleNames.Add("AutomationController"); // helpers for tests
+        PrivateDependencyModuleNames.AddRange(new[]
+        {
+            "AutomationController",  // helpers for tests
+            "UnrealEd",             // for automation framework
+            "ToolMenus"             // required for automation
+        });
     }
 }

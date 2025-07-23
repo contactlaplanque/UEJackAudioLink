@@ -120,20 +120,39 @@ if ($LASTEXITCODE -ne 0) {
 Write-Host "--- Running automation tests ---"
 $logFile = Join-Path $env:PACKAGE_DIR "AutomationTest.log"
 
+# Use more robust automation testing arguments
 & "$env:UE_PATH\Engine\Binaries\Win64\UnrealEditor-Cmd.exe" `
       "$testProjectFile" `
-      -unattended -nopause -nullrhi -nosound `
+      -unattended -nopause -nullrhi -nosound -nocrashreports `
+      -stdout -fullstdoutlogoutput `
       -log="$logFile" `
-      -ExecCmds="Automation RunTests UEJackAudioLink.*; Quit"
+      -ExecCmds="Automation RunTests UEJackAudioLink; quit" `
+      -ReportOutputPath="$env:PACKAGE_DIR"
+
+$automationExitCode = $LASTEXITCODE
 
 # Print the log for debugging
 Write-Host "--- Unreal Editor log output ---"
 if (Test-Path $logFile) {
-    Get-Content $logFile
+    Write-Host "Log file found, contents:"
+    Get-Content $logFile | ForEach-Object { Write-Host "  $_" }
 } else {
-    Write-Host "Log file was not created."
+    Write-Host "Log file was not created at: $logFile"
 }
 
-if ($LASTEXITCODE -ne 0) {
-    throw "AutomationTests failed with code $LASTEXITCODE. Check the log output above for details."
+# Check for automation report files
+$reportFiles = Get-ChildItem -Path $env:PACKAGE_DIR -Filter "*.json" -ErrorAction SilentlyContinue
+if ($reportFiles) {
+    Write-Host "--- Automation Report Files ---"
+    foreach ($file in $reportFiles) {
+        Write-Host "Report file: $($file.Name)"
+        if ($file.Name -like "*Automation*") {
+            Write-Host "Contents:"
+            Get-Content $file.FullName | ForEach-Object { Write-Host "  $_" }
+        }
+    }
+}
+
+if ($automationExitCode -ne 0) {
+    throw "AutomationTests failed with code $automationExitCode. Check the log output above for details."
 }
