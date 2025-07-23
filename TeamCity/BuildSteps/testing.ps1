@@ -137,15 +137,31 @@ if ($LASTEXITCODE -ne 0) {
 Write-Host "--- Running automation tests ---"
 $logFile = Join-Path $env:PACKAGE_DIR "AutomationTest.log"
 
-# Try minimal automation command to avoid socket issues
-Write-Host "Running automation tests with minimal flags..."
-& "$env:UE_PATH\Engine\Binaries\Win64\UnrealEditor-Cmd.exe" `
-      "$testProjectFile" `
-      -buildmachine -unattended -nopause -nosound `
-      -log="$logFile" `
-      -ExecCmds="Automation RunTests UEJackAudioLink.Dummy; quit"
+# Try minimal automation command with timeout
+Write-Host "Running automation tests with 60 second timeout..."
+$job = Start-Job -ScriptBlock {
+    param($UE_PATH, $testProjectFile, $logFile)
+    & "$UE_PATH\Engine\Binaries\Win64\UnrealEditor-Cmd.exe" `
+          $testProjectFile `
+          -buildmachine -unattended -nopause -nosound -nullrhi `
+          -log=$logFile `
+          -ExecCmds="Automation List; Automation RunTests UEJackAudioLink.Dummy; quit"
+} -ArgumentList $env:UE_PATH, $testProjectFile, $logFile
 
-$automationExitCode = $LASTEXITCODE
+# Wait for job to complete or timeout after 60 seconds
+$timeout = 60
+$completed = Wait-Job $job -Timeout $timeout
+
+if ($completed) {
+    $automationExitCode = Receive-Job $job
+    Remove-Job $job
+    Write-Host "Automation completed with exit code: $automationExitCode"
+} else {
+    Write-Host "Automation test timed out after $timeout seconds, stopping job..."
+    Stop-Job $job
+    Remove-Job $job
+    $automationExitCode = 124  # Standard timeout exit code
+}
 
 # Print the log for debugging
 Write-Host "--- Unreal Editor log output ---"
