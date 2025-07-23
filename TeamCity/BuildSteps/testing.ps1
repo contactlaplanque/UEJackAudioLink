@@ -86,7 +86,7 @@ if (Test-Path $pluginDir) {
         Write-Host "  $relativePath"
     }
 } else {
-    Write-Host "Plugin directory doesn't exist!"
+    Write-Host "Plugin directory does not exist!"
 }
 
 # Verify the plugin was copied
