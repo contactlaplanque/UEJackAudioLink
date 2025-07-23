@@ -1,14 +1,12 @@
-#include "CoreMinimal.h"
 #include "Misc/AutomationTest.h"
-#include "Modules/ModuleManager.h"
 
-// Basic functionality test for UEJackAudioLink plugin
-IMPLEMENT_SIMPLE_AUTOMATION_TEST(FUEJackAudioLinkDummyTest, "UEJackAudioLink.Dummy", 
-    EAutomationTestFlags::ApplicationContextMask | EAutomationTestFlags::ProductFilter)
+//  Category  : UEJackAudioLink
+//  SubCat    : Dummy
+//  Test name : UEJackAudioLink.Dummy
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(FUEJackAudioLink_DummyTest, "UEJackAudioLink.Dummy", EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter);
 
-bool FUEJackAudioLinkDummyTest::RunTest(const FString& Parameters)
+bool FUEJackAudioLink_DummyTest::RunTest(const FString& Parameters)
 {
-    // Simple test to verify automation framework works
-    TestTrue(TEXT("Basic assertion test"), true);
+    TestTrue(TEXT("Dummy always passes"), true);
     return true;
 }

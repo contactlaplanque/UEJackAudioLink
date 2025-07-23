@@ -5,7 +5,6 @@ $pluginDir = Join-Path $testProjectDir "Plugins\UEJackAudioLink"
 
 Write-Host "--- Creating test project ---"
 Write-Host "Test project dir: $testProjectDir"
-
 # Clean up any existing test project
 if (Test-Path $testProjectDir) {
     Remove-Item -Path $testProjectDir -Recurse -Force
