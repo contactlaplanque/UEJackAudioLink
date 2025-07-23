@@ -48,7 +48,7 @@ Plugins/
       UEJackAudioLinkEditor/    # Editor-only UI (optional)
         Private/
           LevelMeterTab.cpp
-Tests/                           # Unit & automation tests (framework TBD)
+
 Build/                           # TeamCity configurations
 Docs/
 ```
@@ -59,25 +59,18 @@ Docs/
 
 CI service: **TeamCity** (running on a local/self-hosted agent).
 
-Pipeline outline (details to be filled in later):
+Pipeline outline:
 
 1. Checkout repository.  
 2. Ensure a UE installation is available on the agent (`UE_PATH` environment variable or similar).  
 3. Invoke Unreal Build Tool via `RunUAT BuildPlugin` to compile UEJackAudioLink for at least `Win64 Development`.  
-4. Run automated tests (framework & commands TBD).  
-5. Publish artefacts: zipped packaged plugin, test reports, build log.
-
-> **NOTE**  Exact unit-test framework (GoogleTest, Catch2, UE Automation, etc.) and result parsers will be chosen as the project evolves.
+4. Publish artefacts: packaged plugin and build log.
 
 ---
 
-## 5. Testing Strategy (initial thoughts)
+## 5. Testing Strategy (future consideration)
 
-* **Pure C++ tests** – for algorithmic pieces (peak detector, ring buffer).  
-* **Unreal Automation tests** – for engine-aware behaviour (delegate firing, lifecycle).  
-* **Integration tests** – eventually spin up a dummy JACK server inside CI and verify port enumeration.
-
-Framework selection, naming conventions, and coverage goals will be finalised after the first working build compiles under TeamCity.
+Testing framework will be added later as the plugin develops. Initial focus is on core JACK integration functionality.
 
 ---
 
@@ -95,8 +88,8 @@ Framework selection, naming conventions, and coverage goals will be finalised af
 
 1. In Unreal Editor → Plugins → **New Plugin → Third-Party** → name it **UEJackAudioLink**.  
 2. Commit generated boilerplate; push to repository.  
-3. Spin up a local TeamCity project with a single build step that compiles the plugin (no tests yet).  
-4. Add an empty `Tests/` folder and placeholder Test target in `.uplugin` to pave the way for unit tests.  
+3. ✅ Set up TeamCity project that compiles and packages the plugin.  
+4. Begin implementing core JACK audio integration.  
 5. Draft `Docs/GettingStarted.md` explaining how to clone, set `UE_PATH`, and run the build.  
 6. Sketch an Editor “Level Meter” tab (either Slate or ImGui) that will later subscribe to `FOnJackLevelsUpdated`.
 
@@ -105,5 +98,4 @@ Framework selection, naming conventions, and coverage goals will be finalised af
 ## 8. Reference Material
 
 * JACK C API docs – <https://jackaudio.org/api/>  
-* Unreal Build System – third-party lib integration – <https://docs.unrealengine.com/>  
-* UE Automation Testing – <https://docs.unrealengine.com/TestingAndOptimization/Automation/>
+* Unreal Build System – third-party lib integration – <https://docs.unrealengine.com/>
