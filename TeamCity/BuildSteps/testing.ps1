@@ -75,7 +75,7 @@ if (Test-Path $dllSource) {
     Copy-Item -Path $dllSource -Destination $dllTargetDir -Force
     Write-Host "Copied ExampleLibrary.dll to $dllTargetDir"
 } else {
-    Write-Host "WARNING: Third-party DLL not found at $dllSource – plugin may fail to load."
+    Write-Host "WARNING: Third-party DLL not found at $dllSource - plugin may fail to load."
 }
 
 # Show what was actually copied
