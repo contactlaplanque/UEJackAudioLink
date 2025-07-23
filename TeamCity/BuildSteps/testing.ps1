@@ -60,6 +60,24 @@ foreach ($item in $itemsToCopy) {
     }
 }
 
+# ----------------------------------------------------------------------------------
+# Ensure the third-party DLL is available at runtime so the plugin doesn’t crash.
+# The plugin loads ExampleLibrary.dll from
+#   <PluginRoot>/Binaries/ThirdParty/UEJackAudioLinkLibrary/Win64/ExampleLibrary.dll
+# Copy it from the built ThirdParty folder inside Source.
+
+$dllSource = Join-Path $pluginDir "Source\ThirdParty\UEJackAudioLinkLibrary\x64\Release\ExampleLibrary.dll"
+$dllTargetDir = Join-Path $pluginDir "Binaries\ThirdParty\UEJackAudioLinkLibrary\Win64"
+
+if (Test-Path $dllSource) {
+    Write-Host "--- Staging Third-Party DLL for runtime ---"
+    New-Item -Path $dllTargetDir -ItemType Directory -Force | Out-Null
+    Copy-Item -Path $dllSource -Destination $dllTargetDir -Force
+    Write-Host "Copied ExampleLibrary.dll to $dllTargetDir"
+} else {
+    Write-Host "WARNING: Third-party DLL not found at $dllSource – plugin may fail to load."
+}
+
 # Show what was actually copied
 Write-Host "--- Contents after copy ---"
 if (Test-Path $pluginDir) {
