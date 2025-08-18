@@ -4,6 +4,10 @@
 
 #include "CoreMinimal.h"
 #include "Modules/ModuleManager.h"
+#include "Input/Reply.h"
+#include "Widgets/Input/SCheckBox.h"
+
+// Using lightweight includes for FReply and ECheckBoxState to satisfy linter
 
 class FUEJackAudioLinkModule : public IModuleInterface
 {
@@ -23,6 +27,22 @@ public:
 
 	/** Callback when the restart button is clicked */
 	FReply OnRestartServerClicked();
+
+	/** Open Project Settings at plugin section */
+	FReply OnOpenSettingsClicked();
+
+	/** Connect and disconnect client */
+	FReply OnConnectClientClicked();
+	FReply OnDisconnectClientClicked();
+
+	/** Toggle auto-connect */
+	void OnAutoConnectChanged(ECheckBoxState NewState);
+
+	/** Apply settings and restart server/client */
+	FReply OnApplyRestartClicked();
+
+	/** Returns true and message if audio config mismatches settings */
+	bool IsRestartRequired(FString& OutMessage) const;
 
 private:
 	/** Cached text block showing the status */

@@ -1,7 +1,6 @@
 #include "JackAudioLinkSettings.h"
 #include "Misc/Paths.h"
 #include "Misc/App.h"
-#include "JackInterface.h"
 #include "UEJackAudioLinkLog.h"
 
 UJackAudioLinkSettings::UJackAudioLinkSettings(const FObjectInitializer& ObjectInitializer)
@@ -17,8 +16,6 @@ UJackAudioLinkSettings::UJackAudioLinkSettings(const FObjectInitializer& ObjectI
 void UJackAudioLinkSettings::PostEditChangeProperty(FPropertyChangedEvent& PropertyChangedEvent)
 {
     Super::PostEditChangeProperty(PropertyChangedEvent);
-    UE_LOG(LogJackAudioLink, Display, TEXT("JackAudioLinkSettings changed – restarting server to apply new settings"));
-
-    FJackInterface::Get().RestartServer(SampleRate, BufferSize);
+    UE_LOG(LogJackAudioLink, Display, TEXT("JackAudioLinkSettings changed"));
 }
 #endif 

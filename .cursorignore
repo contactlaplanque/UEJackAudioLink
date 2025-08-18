@@ -1,0 +1,8 @@
+Old/**
+Intermediate/**
+Binaries/**
+Source/ThirdParty/**
+**/*.xcodeproj/**
+**/*.xcworkspace/**
+TeamCity/**
+
