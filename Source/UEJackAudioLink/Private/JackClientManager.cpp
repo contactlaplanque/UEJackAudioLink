@@ -39,7 +39,16 @@ bool FJackClientManager::Connect(const FString& ClientName)
 	}
 	// Setup essential callbacks
 #if WITH_JACK
-	jack_on_shutdown(JackClient, [](void* arg){ UE_LOG(LogJackAudioLink, Warning, TEXT("JACK server shutdown signaled")); }, this);
+	jack_on_shutdown(JackClient, [](void* arg)
+	{
+		FJackClientManager* Self = static_cast<FJackClientManager*>(arg);
+		if (Self)
+		{
+			UE_LOG(LogJackAudioLink, Warning, TEXT("JACK server shutdown signaled (client manager)"));
+			Self->UnregisterAllPorts();
+			Self->JackClient = nullptr;
+		}
+	}, this);
 	jack_set_xrun_callback(JackClient, [](void* arg){ UE_LOG(LogJackAudioLink, Verbose, TEXT("JACK xrun")); return 0; }, this);
 	jack_set_port_registration_callback(JackClient, &FJackClientManager::PortRegistrationCallback, this);
 #endif

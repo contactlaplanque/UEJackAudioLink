@@ -1,0 +1,43 @@
+---
+alwaysApply: true
+---
+# Project structure and entry points
+
+This plugin is a runtime UE module with a simple Editor UI. Key files:
+
+- Module entry: [Source/UEJackAudioLink/Public/UEJackAudioLink.h](mdc:Source/UEJackAudioLink/Public/UEJackAudioLink.h) and [Source/UEJackAudioLink/Private/UEJackAudioLink.cpp](mdc:Source/UEJackAudioLink/Private/UEJackAudioLink.cpp)
+  - Registers the "Jack Audio Link" Nomad tab
+  - Registers Project Settings panel (Plugins → Jack Audio Link)
+  - On startup (when WITH_JACK=1 and Auto Start is enabled) starts JACK server and connects the client
+
+- Settings: [Source/UEJackAudioLink/Public/JackAudioLinkSettings.h](mdc:Source/UEJackAudioLink/Public/JackAudioLinkSettings.h) and [Source/UEJackAudioLink/Private/JackAudioLinkSettings.cpp](mdc:Source/UEJackAudioLink/Private/JackAudioLinkSettings.cpp)
+  - Server: SampleRate, BufferSize, BackendDriver, JackdPath, AutoStart, KillOnShutdown
+  - Client: ClientName, Input/Output Channels
+  - Auto‑connect: toggle and polling interval
+
+- Server control: [Source/UEJackAudioLink/Private/JackServerController.h](mdc:Source/UEJackAudioLink/Private/JackServerController.h) / [.cpp](mdc:Source/UEJackAudioLink/Private/JackServerController.cpp)
+  - Starts/stops/restarts external `jackd`
+  - Queries JACK version and probes server SR/BS
+  - Tracks backend driver and whether the plugin started the server
+
+- Client manager: [Source/UEJackAudioLink/Private/JackClientManager.h](mdc:Source/UEJackAudioLink/Private/JackClientManager.h) / [.cpp](mdc:Source/UEJackAudioLink/Private/JackClientManager.cpp)
+  - Manages `jack_client_t` connect/disconnect, port registration, activation
+  - Discovers clients/ports; registers a port registration callback
+  - Provides simple auto‑connect (1:1 external outputs → Unreal inputs)
+
+- Engine subsystem (runtime API): [Source/UEJackAudioLink/Public/UEJackAudioLinkSubsystem.h](mdc:Source/UEJackAudioLink/Public/UEJackAudioLinkSubsystem.h) / [.cpp](mdc:Source/UEJackAudioLink/Private/UEJackAudioLinkSubsystem.cpp)
+  - Restart server, connect/disconnect client, status queries, optional auto‑connect ticker (UE5 FTSTicker)
+
+- Blueprint wrapper: [Source/UEJackAudioLink/Public/UEJackAudioLinkBPLibrary.h](mdc:Source/UEJackAudioLink/Public/UEJackAudioLinkBPLibrary.h) / [.cpp](mdc:Source/UEJackAudioLink/Private/UEJackAudioLinkBPLibrary.cpp)
+
+- Build config: [Source/UEJackAudioLink/UEJackAudioLink.Build.cs](mdc:Source/UEJackAudioLink/UEJackAudioLink.Build.cs)
+  - WITH_JACK defaults to 0
+  - Auto‑links JACK if `JACK_SDK_ROOT` is set or on Windows if `C:\\Program Files\\JACK2` is found (libjack64.lib)
+
+- Plugin descriptor: [UEJackAudioLink.uplugin](mdc:UEJackAudioLink.uplugin)
+
+- Docs: [Docs/GettingStarted.md](mdc:Docs/GettingStarted.md)
+
+Notes:
+- Public headers must NOT include third‑party JACK headers; keep JACK includes in Private .cpp or WITH_JACK‑guarded internals.
+- The editor tab shows status, a restart banner when SR/BS mismatch settings, and diagnostics.

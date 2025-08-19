@@ -6,6 +6,7 @@
 #include "Modules/ModuleManager.h"
 #include "Input/Reply.h"
 #include "Widgets/Input/SCheckBox.h"
+#include "Containers/Ticker.h"
 
 // Using lightweight includes for FReply and ECheckBoxState to satisfy linter
 
@@ -28,6 +29,13 @@ public:
 	/** Callback when the restart button is clicked */
 	FReply OnRestartServerClicked();
 
+	/** Start and stop server buttons */
+	FReply OnStartServerClicked();
+	FReply OnStopServerClicked();
+
+	/** Force stop any server (external or plugin-owned) */
+	FReply OnStopAnyServerClicked();
+
 	/** Open Project Settings at plugin section */
 	FReply OnOpenSettingsClicked();
 
@@ -44,9 +52,14 @@ public:
 	/** Returns true and message if audio config mismatches settings */
 	bool IsRestartRequired(FString& OutMessage) const;
 
+	/** Update status display (called by timer) */
+	void UpdateStatusDisplay();
+	bool TickStatusUpdate(float DeltaTime);
+
 private:
 	/** Cached text block showing the status */
 	TSharedPtr<class STextBlock> StatusTextBlock;
 
-	// No timer handle needed as Slate bindings update automatically.
+	/** Ticker handle for periodic status updates */
+	FTSTicker::FDelegateHandle StatusUpdateTickHandle;
 };

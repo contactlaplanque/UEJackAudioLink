@@ -32,7 +32,34 @@ FString FJackServerController::GetVersion() const
 	if (ReturnCode == 0 && !StdOut.IsEmpty())
 	{
 		StdOut.TrimStartAndEndInline();
-		return StdOut;
+		
+		// Parse jackd version output to extract clean version number
+		// Example input: "jackdmp 1.9.22" or "JACK Audio Connection Kit version 1.9.22"
+		FString ParsedVersion = StdOut;
+		
+		// Look for version pattern (numbers with dots)
+		FRegexPattern VersionPattern(TEXT(R"((\d+\.\d+(?:\.\d+)?))"));
+		FRegexMatcher Matcher(VersionPattern, StdOut);
+		if (Matcher.FindNext())
+		{
+			FString VersionNumber = Matcher.GetCaptureGroup(1);
+			
+			// Check if it starts with jackdmp or JACK to add prefix
+			if (StdOut.Contains(TEXT("jackdmp")))
+			{
+				ParsedVersion = FString::Printf(TEXT("jackdmp %s"), *VersionNumber);
+			}
+			else if (StdOut.Contains(TEXT("JACK Audio Connection Kit")))
+			{
+				ParsedVersion = FString::Printf(TEXT("JACK %s"), *VersionNumber);
+			}
+			else
+			{
+				ParsedVersion = VersionNumber;
+			}
+		}
+		
+		return ParsedVersion;
 	}
 	return TEXT("Unknown");
 }
@@ -52,7 +79,7 @@ bool FJackServerController::IsAnyServerAvailable() const
 		jack_client_close(Test);
 		return true;
 	}
-	return (Status & JackServerStarted) != 0;
+	return false;
 #else
 	return false;
 #endif
@@ -103,6 +130,34 @@ bool FJackServerController::RestartServer(int32 SampleRate, int32 BufferSize, co
 {
 	StopServer();
 	return StartServer(SampleRate, BufferSize, DriverOverride, ExecutableOverride);
+}
+
+bool FJackServerController::StopAnyServer() const
+{
+#if PLATFORM_WINDOWS
+	int32 ReturnCode = 0;
+	FString StdOut, StdErr;
+	// Try jackd.exe
+	if (FPlatformProcess::ExecProcess(TEXT("cmd.exe"), TEXT("/C taskkill /F /IM jackd.exe"), &ReturnCode, &StdOut, &StdErr))
+	{
+		if (ReturnCode == 0)
+		{
+			return true;
+		}
+	}
+	// Try jackdmp.exe
+	ReturnCode = 0; StdOut.Empty(); StdErr.Empty();
+	if (FPlatformProcess::ExecProcess(TEXT("cmd.exe"), TEXT("/C taskkill /F /IM jackdmp.exe"), &ReturnCode, &StdOut, &StdErr))
+	{
+		if (ReturnCode == 0)
+		{
+			return true;
+		}
+	}
+	return false;
+#else
+	return false;
+#endif
 }
 
 FString FJackServerController::ResolveJackdExecutable(const FString& ExecutableOverride) const
@@ -163,5 +218,7 @@ bool FJackServerController::GetServerAudioConfig(int32& OutSampleRate, int32& Ou
 	return false;
 #endif
 }
+
+
 
 

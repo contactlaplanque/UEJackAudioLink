@@ -93,7 +93,8 @@ public class UEJackAudioLink : ModuleRules
 				{
 					"LevelEditor",
 					"EditorStyle",
-					"WorkspaceMenuStructure"
+					"WorkspaceMenuStructure",
+					"UnrealEd"
 				});
 		}
 		

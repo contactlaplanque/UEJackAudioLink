@@ -19,6 +19,9 @@ public:
 	bool StopServer();
 	bool RestartServer(int32 SampleRate, int32 BufferSize, const FString& DriverOverride = FString(), const FString& ExecutableOverride = FString());
 
+	// Force-stop any JACK server (including external); Windows implementation uses taskkill
+	bool StopAnyServer() const;
+
 	// Ownership
 	bool WasServerStartedByPlugin() const { return bServerOwnedByPlugin; }
 	const FString& GetLastStartedDriver() const { return LastDriver; }
@@ -27,7 +30,7 @@ public:
 
 	// Query current server audio configuration (sample rate and buffer size). Returns false if unavailable.
 	bool GetServerAudioConfig(int32& OutSampleRate, int32& OutBufferSize) const;
-
+	
 private:
 	FJackServerController() = default;
 	~FJackServerController();
