@@ -226,7 +226,7 @@ void FJackServerMonitor::UpdateSRBSFromSentinel()
 	return 0;
 }
 
-void FJackServerMonitor::OnServerShutdown() {}
+// OnServerShutdown removed (unused)
 
 void FJackServerMonitor::OnSampleRateChanged(int32 NewSR)
 {

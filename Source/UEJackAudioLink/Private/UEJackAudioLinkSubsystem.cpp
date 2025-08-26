@@ -2,7 +2,6 @@
 #include "JackServerController.h"
 #include "JackClientManager.h"
 #include "JackAudioLinkSettings.h"
-#include "Misc/App.h"
 #include "Containers/Ticker.h"
 
 bool UUEJackAudioLinkSubsystem::RestartServer(int32 SampleRate, int32 BufferSize)

@@ -46,7 +46,7 @@ private:
 
 	bool Tick(float DeltaTime);
 
-	void OnServerShutdown();
+	// OnServerShutdown removed (unused)
 	void OnSampleRateChanged(int32 NewSR);
 	void OnBufferSizeChanged(int32 NewBS);
 

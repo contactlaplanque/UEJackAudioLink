@@ -5,10 +5,7 @@
 #include "CoreMinimal.h"
 #include "Modules/ModuleManager.h"
 #include "Input/Reply.h"
-#include "Widgets/Input/SCheckBox.h"
 #include "Containers/Ticker.h"
-
-// Using lightweight includes for FReply and ECheckBoxState to satisfy linter
 
 class FUEJackAudioLinkModule : public IModuleInterface
 {
@@ -33,8 +30,6 @@ public:
 	FReply OnStartServerClicked();
 	FReply OnStopServerClicked();
 
-	/** Force stop any server (external or plugin-owned) */
-	FReply OnStopAnyServerClicked();
 
 	/** Open Project Settings at plugin section */
 	FReply OnOpenSettingsClicked();
@@ -43,8 +38,6 @@ public:
 	FReply OnConnectClientClicked();
 	FReply OnDisconnectClientClicked();
 
-	/** Toggle auto-connect */
-	void OnAutoConnectChanged(ECheckBoxState NewState);
 
 	/** Apply settings and restart server/client */
 	FReply OnApplyRestartClicked();

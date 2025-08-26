@@ -1,22 +1,17 @@
 // Copyright Epic Games, Inc. All Rights Reserved.
 
 #include "UEJackAudioLink.h"
-#include "Misc/MessageDialog.h"
 #include "Modules/ModuleManager.h"
-#include "Interfaces/IPluginManager.h"
-#include "Misc/Paths.h"
 #include "HAL/PlatformProcess.h"
 #include "Widgets/Docking/SDockTab.h"
 #include "Widgets/Text/STextBlock.h"
 #include "Widgets/SBoxPanel.h"
 #include "Widgets/Input/SButton.h"
-#include "Widgets/Input/SCheckBox.h"
-#include "Framework/MultiBox/MultiBoxBuilder.h"
 #include "TimerManager.h"
 #include "LevelEditor.h"
 #include "WorkspaceMenuStructure.h"
 #include "WorkspaceMenuStructureModule.h"
-#include "Engine/Engine.h"
+// #include "Engine/Engine.h" // not used here
 #include "Misc/App.h"
 #include "Containers/Ticker.h"
 #include "UEJackAudioLinkLog.h"
@@ -25,7 +20,6 @@
 #include "JackServerController.h"
 #include "JackServerMonitor.h"
 #include "JackClientManager.h"
-#include "UEJackAudioLinkSubsystem.h"
 #include "Widgets/Layout/SUniformGridPanel.h"
 #include "Styling/AppStyle.h"
 

@@ -22,11 +22,7 @@ public:
 	// Force-stop any JACK server (including external); Windows implementation uses taskkill
 	bool StopAnyServer() const;
 
-	// Ownership
-	bool WasServerStartedByPlugin() const { return bServerOwnedByPlugin; }
-	const FString& GetLastStartedDriver() const { return LastDriver; }
-	int32 GetLastSampleRate() const { return LastSampleRate; }
-	int32 GetLastBufferSize() const { return LastBufferSize; }
+	// Ownership info removed
 
 	// Query current server audio configuration (sample rate and buffer size). Returns false if unavailable.
 	bool GetServerAudioConfig(int32& OutSampleRate, int32& OutBufferSize) const;
@@ -39,10 +35,6 @@ private:
 	FString BuildServerParams(int32 SampleRate, int32 BufferSize, const FString& DriverOverride) const;
 
 	FProcHandle JackProcHandle;
-	bool bServerOwnedByPlugin = false;
-	FString LastDriver;
-	int32 LastSampleRate = 0;
-	int32 LastBufferSize = 0;
 };
 
 

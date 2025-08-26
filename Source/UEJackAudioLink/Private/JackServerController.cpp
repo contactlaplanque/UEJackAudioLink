@@ -1,7 +1,6 @@
 #include "JackServerController.h"
 #include "HAL/PlatformProcess.h"
 #include "Misc/Paths.h"
-#include "Misc/Paths.h"
 #include "UEJackAudioLinkLog.h"
 #if WITH_JACK
 #include <jack/jack.h>
@@ -107,10 +106,7 @@ bool FJackServerController::StartServer(int32 SampleRate, int32 BufferSize, cons
 		UE_LOG(LogJackAudioLink, Error, TEXT("Failed to launch jackd"));
 		return false;
 	}
-	bServerOwnedByPlugin = true;
-	LastDriver = DriverOverride;
-	LastSampleRate = SampleRate;
-	LastBufferSize = BufferSize;
+	// Ownership tracking removed
 	return true;
 }
 
@@ -122,7 +118,6 @@ bool FJackServerController::StopServer()
 	}
 	FPlatformProcess::TerminateProc(JackProcHandle, true);
 	JackProcHandle.Reset();
-	bServerOwnedByPlugin = false;
 	return true;
 }
 

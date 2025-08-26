@@ -1,5 +1,4 @@
 #include "JackAudioLinkSettings.h"
-#include "Misc/Paths.h"
 #include "Misc/App.h"
 #include "UEJackAudioLinkLog.h"
 

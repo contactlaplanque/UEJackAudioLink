@@ -16,8 +16,7 @@ public:
 	void Disconnect();
 	bool IsConnected() const;
 
-	// Basic callbacks
-	void SetupCallbacks();
+	// Basic callbacks are set up during Connect
 
 	bool Activate();
 	bool Deactivate();

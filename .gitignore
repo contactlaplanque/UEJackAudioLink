@@ -49,4 +49,8 @@ Thumbs.db
 Plugins/*/Binaries/
 Plugins/*/Intermediate/ 
 
+# --- CLang ----------
 compile_commands.json
+
+# --- Cursor ------
+.cursor/
