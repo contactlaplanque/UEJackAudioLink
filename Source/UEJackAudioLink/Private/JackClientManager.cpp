@@ -1,5 +1,6 @@
 #include "JackClientManager.h"
 #include "UEJackAudioLinkLog.h"
+#include "Async/Async.h"
 
 #if WITH_JACK
 #include <jack/jack.h>
@@ -45,11 +46,15 @@ bool FJackClientManager::Connect(const FString& ClientName)
 		if (Self)
 		{
 			UE_LOG(LogJackAudioLink, Warning, TEXT("JACK server shutdown signaled (client manager)"));
-			Self->UnregisterAllPorts();
-			Self->JackClient = nullptr;
+			// Defer cleanup to game thread to avoid mutating arrays during JACK callback
+			AsyncTask(ENamedThreads::GameThread, [Self]()
+			{
+				Self->UnregisterAllPorts();
+				Self->JackClient = nullptr;
+			});
 		}
 	}, this);
-	jack_set_xrun_callback(JackClient, [](void* arg){ UE_LOG(LogJackAudioLink, Verbose, TEXT("JACK xrun")); return 0; }, this);
+	jack_set_xrun_callback(JackClient, [](void* /*arg*/){ UE_LOG(LogJackAudioLink, Verbose, TEXT("JACK xrun")); return 0; }, this);
 	jack_set_port_registration_callback(JackClient, &FJackClientManager::PortRegistrationCallback, this);
 #endif
 	return true;
@@ -62,10 +67,11 @@ bool FJackClientManager::Connect(const FString& ClientName)
 void FJackClientManager::Disconnect()
 {
 #if WITH_JACK
-	UnregisterAllPorts();
 	if (JackClient)
 	{
+		// Deactivate first to halt callbacks, then unregister ports, then close client
 		jack_deactivate(JackClient);
+		UnregisterAllPorts();
 		jack_client_close(JackClient);
 		JackClient = nullptr;
 	}

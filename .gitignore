@@ -48,3 +48,5 @@ Thumbs.db
 # --- Plugin-specific patterns ----------------------------------------------------
 Plugins/*/Binaries/
 Plugins/*/Intermediate/ 
+
+compile_commands.json

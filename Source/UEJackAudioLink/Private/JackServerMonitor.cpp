@@ -22,6 +22,7 @@ FJackServerMonitor::~FJackServerMonitor()
 void FJackServerMonitor::Start()
 {
 #if WITH_JACK
+	bIsActive = true;
 	// Attempt to open sentinel immediately
 	OpenSentinel();
 	// Start 1s ticker to probe when disconnected
@@ -37,6 +38,7 @@ void FJackServerMonitor::Start()
 
 void FJackServerMonitor::Stop()
 {
+	bIsActive = false;
 	if (TickHandle.IsValid())
 	{
 		FTSTicker::GetCoreTicker().RemoveTicker(TickHandle);
@@ -56,6 +58,10 @@ FJackServerState FJackServerMonitor::GetState() const
 bool FJackServerMonitor::Tick(float /*DeltaTime*/)
 {
 #if WITH_JACK
+	if (!bIsActive)
+	{
+		return false;
+	}
 	// If sentinel missing, probe once per tick
 	if (!SentinelClient)
 	{
@@ -71,6 +77,10 @@ bool FJackServerMonitor::Tick(float /*DeltaTime*/)
 #if WITH_JACK
 void FJackServerMonitor::RequestImmediateProbe()
 {
+	if (!bIsActive)
+	{
+		return;
+	}
 	if (!SentinelClient && ProbeServerAvailable())
 	{
 		OpenSentinel();
@@ -90,6 +100,10 @@ void FJackServerMonitor::MarkServerDown()
 
 bool FJackServerMonitor::OpenSentinel()
 {
+	if (!bIsActive)
+	{
+		return false;
+	}
 	if (SentinelClient)
 	{
 		return true;
@@ -169,16 +183,22 @@ void FJackServerMonitor::UpdateSRBSFromSentinel()
 	// Update state and schedule close and re-probe on game thread
 	AsyncTask(ENamedThreads::GameThread, [Self]()
 	{
+		if (!Self->bIsActive)
+		{
+			return;
+		}
 		{
 			FScopeLock Lock(&Self->StateMutex);
 			Self->State.bServerAvailable = false;
 			Self->State.SampleRate = 0;
 			Self->State.BufferSize = 0;
 		}
-		Self->CloseSentinel();
+		// Avoid closing the JACK client from inside the shutdown callback path.
+		// JACK is already tearing down the client; calling jack_client_close here can crash.
+		Self->SentinelClient = nullptr;
 		UE_LOG(LogJackAudioLink, Display, TEXT("JACK server shutdown detected by sentinel"));
 		// quick delayed re-probe to pick up external restarts fast
-		FTSTicker::GetCoreTicker().AddTicker(FTickerDelegate::CreateLambda([Self](float){ Self->RequestImmediateProbe(); return false; }), 0.25f);
+		FTSTicker::GetCoreTicker().AddTicker(FTickerDelegate::CreateLambda([Self](float){ if (Self->bIsActive) { Self->RequestImmediateProbe(); } return false; }), 0.25f);
 	});
 }
 
@@ -188,6 +208,7 @@ void FJackServerMonitor::UpdateSRBSFromSentinel()
 	if (!Self) return 0;
 	AsyncTask(ENamedThreads::GameThread, [Self, NewRate]()
 	{
+		if (!Self->bIsActive) { return; }
 		Self->OnSampleRateChanged(static_cast<int32>(NewRate));
 	});
 	return 0;
@@ -199,6 +220,7 @@ void FJackServerMonitor::UpdateSRBSFromSentinel()
 	if (!Self) return 0;
 	AsyncTask(ENamedThreads::GameThread, [Self, NewFrames]()
 	{
+		if (!Self->bIsActive) { return; }
 		Self->OnBufferSizeChanged(static_cast<int32>(NewFrames));
 	});
 	return 0;

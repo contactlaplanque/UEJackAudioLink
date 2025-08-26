@@ -55,6 +55,7 @@ private:
 	FJackServerState State;
 
 	FTSTicker::FDelegateHandle TickHandle;
+	bool bIsActive = false;
 
 #if WITH_JACK
 	struct _jack_client; 

@@ -26,6 +26,8 @@
 #include "JackServerMonitor.h"
 #include "JackClientManager.h"
 #include "UEJackAudioLinkSubsystem.h"
+#include "Widgets/Layout/SUniformGridPanel.h"
+#include "Styling/AppStyle.h"
 
 #define LOCTEXT_NAMESPACE "FUEJackAudioLinkModule"
 
@@ -34,6 +36,39 @@ DEFINE_LOG_CATEGORY(LogJackAudioLink);
 static const FName UEJackAudioLinkTabName("UEJackAudioLinkTab");
 static TSharedPtr<FWorkspaceItem> JackWorkspaceMenuCategory;
 
+// Helper to consistently obtain current JACK server audio config
+// Prefers monitor snapshot, then live client, then a probe
+static bool GetEffectiveServerAudioConfig(uint32& OutSampleRate, uint32& OutBufferSize)
+{
+#if WITH_JACK
+    const FJackServerState MonState = FJackServerMonitor::Get().GetState();
+    if (MonState.SampleRate > 0 && MonState.BufferSize > 0)
+    {
+        OutSampleRate = static_cast<uint32>(MonState.SampleRate);
+        OutBufferSize = static_cast<uint32>(MonState.BufferSize);
+        return true;
+    }
+
+    const uint32 ClientSR = FJackClientManager::Get().GetSampleRate();
+    const uint32 ClientBS = FJackClientManager::Get().GetBufferSize();
+    if (ClientSR > 0 && ClientBS > 0)
+    {
+        OutSampleRate = ClientSR;
+        OutBufferSize = ClientBS;
+        return true;
+    }
+
+    int32 ProbeSR = 0, ProbeBS = 0;
+    if (FJackServerController::Get().GetServerAudioConfig(ProbeSR, ProbeBS))
+    {
+        OutSampleRate = static_cast<uint32>(ProbeSR);
+        OutBufferSize = static_cast<uint32>(ProbeBS);
+        return true;
+    }
+#endif
+    return false;
+}
+
 void FUEJackAudioLinkModule::StartupModule()
 {
 	// Register tab spawner
@@ -41,13 +76,10 @@ void FUEJackAudioLinkModule::StartupModule()
 	FGlobalTabmanager::Get()->RegisterNomadTabSpawner(UEJackAudioLinkTabName, FOnSpawnTab::CreateRaw(this, &FUEJackAudioLinkModule::OnSpawnPluginTab))
 	    .SetDisplayName(LOCTEXT("UEJackAudioLinkTabTitle", "Jack Audio Link"))
 	    .SetMenuType(ETabSpawnerMenuType::Enabled)
-	    .SetGroup(JackWorkspaceMenuCategory.ToSharedRef());
+	    .SetGroup(JackWorkspaceMenuCategory.ToSharedRef())
+	    .SetIcon(FSlateIcon(FAppStyle::GetAppStyleSetName(), "LevelEditor.Tabs.Details"));
 
-	// Automatically invoke the tab when in editor
-	if (GIsEditor)
-	{
-	    FGlobalTabmanager::Get()->TryInvokeTab(UEJackAudioLinkTabName);
-	}
+	// Removed auto-open to allow UE to restore the user’s saved layout/docked state
 
 	// Register settings in Project Settings → Plugins → Jack Audio Link
 	if (ISettingsModule* SettingsModule = FModuleManager::GetModulePtr<ISettingsModule>("Settings"))
@@ -58,28 +90,12 @@ void FUEJackAudioLinkModule::StartupModule()
 	        GetMutableDefault<UJackAudioLinkSettings>());
 	}
 
-	// Log plugin load details to help diagnose duplicate/old copies being loaded
-	if (IPluginManager::Get().FindPlugin(TEXT("UEJackAudioLink")).IsValid())
-	{
-		const FString BaseDir = IPluginManager::Get().FindPlugin(TEXT("UEJackAudioLink"))->GetBaseDir();
-		UE_LOG(LogJackAudioLink, Display, TEXT("UEJackAudioLink Startup. BaseDir=%s, Built=%s %s, WITH_JACK=%d"), *BaseDir, TEXT(__DATE__), TEXT(__TIME__), WITH_JACK);
-	}
-
 	// Optionally auto-start server and connect client
 #if WITH_JACK
 	const UJackAudioLinkSettings* Settings = GetDefault<UJackAudioLinkSettings>();
 	if (Settings && Settings->bAutoStartServer)
 	{
-		UE_LOG(LogJackAudioLink, Display, TEXT("Plugin startup: Auto-start enabled, enforcing single JACK instance..."));
-		// Force stop any existing JACK server (external or plugin-owned) to ensure a clean start
-		FJackServerController::Get().StopAnyServer();
-		// Wait briefly until no server is available to avoid race with process teardown
-		for (int i = 0; i < 30; ++i) // up to ~3s
-		{
-			if (!FJackServerController::Get().IsAnyServerAvailable()) { break; }
-			FPlatformProcess::Sleep(0.1f);
-		}
-
+		UE_LOG(LogJackAudioLink, Display, TEXT("Plugin startup: Auto-start enabled; will reconcile any existing JACK server with desired config"));
 		UE_LOG(LogJackAudioLink, Display, TEXT("Plugin startup: Checking JACK server..."));
 		// Check if any server is running (even from external apps like QJackCtl)
 		bool bNeedsRestart = false;
@@ -90,10 +106,10 @@ void FUEJackAudioLinkModule::StartupModule()
 			int32 CurrentSR = 0, CurrentBS = 0;
 			if (FJackServerController::Get().GetServerAudioConfig(CurrentSR, CurrentBS))
 			{
-				if (CurrentSR != Settings->SampleRate || CurrentBS != Settings->BufferSize)
+				if (CurrentSR != Settings->GetSampleRateValue() || CurrentBS != Settings->GetBufferSizeValue())
 				{
 					UE_LOG(LogJackAudioLink, Display, TEXT("Plugin startup: JACK server running with wrong settings (%d Hz, %d frames). Expected: %d Hz, %d frames. Restarting..."), 
-						CurrentSR, CurrentBS, Settings->SampleRate, Settings->BufferSize);
+						CurrentSR, CurrentBS, Settings->GetSampleRateValue(), Settings->GetBufferSizeValue());
 					bNeedsRestart = true;
 				}
 				else
@@ -107,15 +123,18 @@ void FUEJackAudioLinkModule::StartupModule()
 			UE_LOG(LogJackAudioLink, Display, TEXT("Plugin startup: No JACK server found, will start new one"));
 		}
 		
-		auto WaitForConfigMatch = [Settings]() -> bool
+		int32 ObservedSR = 0, ObservedBS = 0;
+		auto WaitForConfigMatch = [Settings, &ObservedSR, &ObservedBS]() -> bool
 		{
-			// Wait up to ~3s for server to report SR/BS and match settings
-			for (int i = 0; i < 30; ++i)
+			// Wait up to ~6s for server to report SR/BS and match settings
+			for (int i = 0; i < 60; ++i)
 			{
-				int32 SR=0, BS=0;
+				int32 SR = 0, BS = 0;
 				if (FJackServerController::Get().GetServerAudioConfig(SR, BS))
 				{
-					if (SR == Settings->SampleRate && BS == Settings->BufferSize)
+					ObservedSR = SR;
+					ObservedBS = BS;
+					if (SR == Settings->GetSampleRateValue() && BS == Settings->GetBufferSizeValue())
 					{
 						return true;
 					}
@@ -129,8 +148,9 @@ void FUEJackAudioLinkModule::StartupModule()
 		{
 			// Use RestartServer to ensure correct settings
 			UE_LOG(LogJackAudioLink, Display, TEXT("Plugin startup: Restarting JACK server with correct settings..."));
-			if (FJackServerController::Get().RestartServer(Settings->SampleRate, Settings->BufferSize, Settings->BackendDriver, Settings->JackdPath))
+			if (FJackServerController::Get().RestartServer(Settings->GetSampleRateValue(), Settings->GetBufferSizeValue()))
 			{
+				FJackServerMonitor::Get().RequestImmediateProbe();
 				if (WaitForConfigMatch())
 				{
 					UE_LOG(LogJackAudioLink, Display, TEXT("Plugin startup: JACK server restarted with desired config"));
@@ -140,7 +160,8 @@ void FUEJackAudioLinkModule::StartupModule()
 					UE_LOG(LogJackAudioLink, Warning, TEXT("Plugin startup: Server config mismatch after restart; retrying once"));
 					FJackServerController::Get().StopAnyServer();
 					FPlatformProcess::Sleep(0.2f);
-					FJackServerController::Get().StartServer(Settings->SampleRate, Settings->BufferSize, Settings->BackendDriver, Settings->JackdPath);
+					FJackServerController::Get().StartServer(Settings->GetSampleRateValue(), Settings->GetBufferSizeValue());
+					FJackServerMonitor::Get().RequestImmediateProbe();
 					WaitForConfigMatch();
 				}
 			}
@@ -151,26 +172,46 @@ void FUEJackAudioLinkModule::StartupModule()
 		}
 		else
 		{
-			// No server running or settings are correct, start normally
-			UE_LOG(LogJackAudioLink, Display, TEXT("Plugin startup: Starting JACK server..."));
-			if (FJackServerController::Get().StartServer(Settings->SampleRate, Settings->BufferSize, Settings->BackendDriver, Settings->JackdPath))
+			// Start server only if none is running; otherwise use the existing one
+			if (!FJackServerController::Get().IsAnyServerAvailable())
 			{
-				if (WaitForConfigMatch())
+				UE_LOG(LogJackAudioLink, Display, TEXT("Plugin startup: Starting JACK server..."));
+				if (FJackServerController::Get().StartServer(Settings->GetSampleRateValue(), Settings->GetBufferSizeValue()))
 				{
-					UE_LOG(LogJackAudioLink, Display, TEXT("Plugin startup: JACK server started with desired config"));
+					// Kick the monitor to attach ASAP so UI reflects state quickly
+					FJackServerMonitor::Get().RequestImmediateProbe();
+					if (WaitForConfigMatch())
+					{
+						UE_LOG(LogJackAudioLink, Display, TEXT("Plugin startup: JACK server started with desired config"));
+					}
+					else
+					{
+						if (ObservedSR == 0 || ObservedBS == 0)
+						{
+							UE_LOG(LogJackAudioLink, Warning, TEXT("Plugin startup: Server not ready to report config within timeout; will not restart"));
+							// Avoid unnecessary restart when we simply could not read SR/BS yet
+							FJackServerMonitor::Get().RequestImmediateProbe();
+						}
+						else
+						{
+							UE_LOG(LogJackAudioLink, Warning, TEXT("Plugin startup: Server config mismatch on first start (got %d Hz, %d frames); restarting with desired config"), ObservedSR, ObservedBS);
+							FJackServerController::Get().StopAnyServer();
+							FPlatformProcess::Sleep(0.2f);
+							FJackServerController::Get().StartServer(Settings->GetSampleRateValue(), Settings->GetBufferSizeValue());
+							FJackServerMonitor::Get().RequestImmediateProbe();
+							WaitForConfigMatch();
+						}
+					}
 				}
 				else
 				{
-					UE_LOG(LogJackAudioLink, Warning, TEXT("Plugin startup: Server config mismatch on first start; restarting with desired config"));
-					FJackServerController::Get().StopAnyServer();
-					FPlatformProcess::Sleep(0.2f);
-					FJackServerController::Get().StartServer(Settings->SampleRate, Settings->BufferSize, Settings->BackendDriver, Settings->JackdPath);
-					WaitForConfigMatch();
+					UE_LOG(LogJackAudioLink, Warning, TEXT("Plugin startup: Failed to start JACK server"));
 				}
 			}
 			else
 			{
-				UE_LOG(LogJackAudioLink, Warning, TEXT("Plugin startup: Failed to start JACK server"));
+				UE_LOG(LogJackAudioLink, Display, TEXT("Plugin startup: Using existing JACK server (no restart needed)"));
+				FJackServerMonitor::Get().RequestImmediateProbe();
 			}
 		}
 		
@@ -179,19 +220,14 @@ void FUEJackAudioLinkModule::StartupModule()
 		
 		if (FJackClientManager::Get().Connect(ClientName))
 		{
-			UE_LOG(LogJackAudioLink, Display, TEXT("Plugin startup: JACK client connected successfully"));
+			UE_LOG(LogJackAudioLink, Display, TEXT("JACK client connected successfully"));
 			if (FJackClientManager::Get().RegisterAudioPorts(Settings->InputChannels, Settings->OutputChannels, TEXT("unreal")))
 			{
 				UE_LOG(LogJackAudioLink, Display, TEXT("Plugin startup: Audio ports registered: %d inputs, %d outputs"), Settings->InputChannels, Settings->OutputChannels);
 				if (FJackClientManager::Get().Activate())
 				{
 					UE_LOG(LogJackAudioLink, Display, TEXT("Plugin startup: JACK client activated successfully"));
-					if (GEngine && GEngine->GetEngineSubsystem<UUEJackAudioLinkSubsystem>())
-					{
-						GEngine->GetEngineSubsystem<UUEJackAudioLinkSubsystem>()->StartAutoConnect(Settings->ClientMonitorInterval, Settings->bAutoConnectToNewClients);
-						UE_LOG(LogJackAudioLink, Display, TEXT("Plugin startup: Auto-connect started (enabled: %s, interval: %.1fs)"), 
-							Settings->bAutoConnectToNewClients ? TEXT("yes") : TEXT("no"), Settings->ClientMonitorInterval);
-					}
+					// Auto-connect removed
 				}
 				else
 				{
@@ -242,16 +278,14 @@ void FUEJackAudioLinkModule::ShutdownModule()
 	    SettingsModule->UnregisterSettings("Project", "Plugins", "Jack Audio Link");
 	}
 
-	// Stop server on shutdown only if owned (policy set in settings)
+	// Do not kill JACK server on shutdown; only stop our monitor
 #if WITH_JACK
-	// Stop hybrid monitor
 	FJackServerMonitor::Get().Stop();
-	const UJackAudioLinkSettings* Settings = GetDefault<UJackAudioLinkSettings>();
-	if (Settings && Settings->bKillServerOnShutdown && FJackServerController::Get().WasServerStartedByPlugin())
+	// Ensure our JACK client is fully disconnected to release JACK threads
+	if (FJackClientManager::Get().IsConnected())
 	{
-		UE_LOG(LogJackAudioLink, Display, TEXT("Plugin shutdown: Stopping JACK server..."));
-		FJackServerController::Get().StopServer();
-		UE_LOG(LogJackAudioLink, Display, TEXT("Plugin shutdown: JACK server stopped"));
+		FJackClientManager::Get().Deactivate();
+		FJackClientManager::Get().Disconnect();
 	}
 #endif
 }
@@ -262,12 +296,57 @@ TSharedRef<SDockTab> FUEJackAudioLinkModule::OnSpawnPluginTab(const FSpawnTabArg
 	    .TabRole(ETabRole::NomadTab)
 	    [
 	        SNew(SVerticalBox)
+	        // Colored server status
+	        + SVerticalBox::Slot().AutoHeight().Padding(4)
+	        [
+	            SNew(SHorizontalBox)
+	            + SHorizontalBox::Slot().AutoWidth().VAlign(VAlign_Center).Padding(4)
+	            [ SNew(STextBlock).Text(LOCTEXT("ServerLabel", "Server:")) ]
+	            + SHorizontalBox::Slot().AutoWidth().VAlign(VAlign_Center).Padding(4)
+	            [
+	                SNew(STextBlock)
+	                .Text_Lambda([]()
+	                {
+	                    const bool bAny = FJackServerMonitor::Get().GetState().bServerAvailable;
+	                    const bool bOurs = FJackServerController::Get().IsServerRunning();
+	                    return bAny ? FText::FromString(bOurs ? TEXT("RUNNING (plugin)") : TEXT("RUNNING (external)")) : FText::FromString(TEXT("NOT RUNNING"));
+	                })
+	                .ColorAndOpacity_Lambda([]()
+	                {
+	                    const bool bAny = FJackServerMonitor::Get().GetState().bServerAvailable;
+	                    return bAny ? FSlateColor(FLinearColor(0.2f, 0.8f, 0.2f)) : FSlateColor(FLinearColor(0.9f, 0.2f, 0.2f));
+	                })
+	            ]
+	        ]
+	        // Colored client status
+	        + SVerticalBox::Slot().AutoHeight().Padding(4)
+	        [
+	            SNew(SHorizontalBox)
+	            + SHorizontalBox::Slot().AutoWidth().VAlign(VAlign_Center).Padding(4)
+	            [ SNew(STextBlock).Text(LOCTEXT("ClientLabel", "Client:")) ]
+	            + SHorizontalBox::Slot().AutoWidth().VAlign(VAlign_Center).Padding(4)
+	            [
+	                SNew(STextBlock)
+	                .Text_Lambda([]()
+	                {
+	                    const bool bClient = FJackClientManager::Get().IsConnected();
+	                    return bClient ? FText::FromString(TEXT("CONNECTED")) : FText::FromString(TEXT("NOT CONNECTED"));
+	                })
+	                .ColorAndOpacity_Lambda([]()
+	                {
+	                    const bool bClient = FJackClientManager::Get().IsConnected();
+	                    return bClient ? FSlateColor(FLinearColor(0.2f, 0.8f, 0.2f)) : FSlateColor(FLinearColor(0.9f, 0.2f, 0.2f));
+	                })
+	            ]
+	        ]
+	        // Existing detailed text
 	        + SVerticalBox::Slot().AutoHeight().Padding(4)
 	        [
 	            SAssignNew(StatusTextBlock, STextBlock)
 	            .Text_Lambda([this]() { return GetStatusText(); })
 	            .AutoWrapText(true)
 	        ]
+	        // Restart required banner and button
 	        + SVerticalBox::Slot().AutoHeight().Padding(4)
 	        [
 	            SNew(SHorizontalBox)
@@ -288,96 +367,27 @@ TSharedRef<SDockTab> FUEJackAudioLinkModule::OnSpawnPluginTab(const FSpawnTabArg
 	                .OnClicked_Raw(this, &FUEJackAudioLinkModule::OnApplyRestartClicked)
 	            ]
 	        ]
-	        + SVerticalBox::Slot().AutoHeight().Padding(4)
+	        // Controls grid
+	        + SVerticalBox::Slot().AutoHeight()
 	        [
-	            SNew(SHorizontalBox)
-	            + SHorizontalBox::Slot().AutoWidth().Padding(4)
-	            [
-	                SNew(SButton)
-	                .Text(LOCTEXT("StartServerButton", "Start Server"))
-	                .OnClicked_Raw(this, &FUEJackAudioLinkModule::OnStartServerClicked)
-	            ]
-	            + SHorizontalBox::Slot().AutoWidth().Padding(4)
-	            [
-	                SNew(SButton)
-	                .Text(LOCTEXT("StopServerButton", "Stop Server"))
-	                .OnClicked_Raw(this, &FUEJackAudioLinkModule::OnStopServerClicked)
-	            ]
-	        ]
-	        + SVerticalBox::Slot().AutoHeight().Padding(4)
-	        [
-	            SNew(SHorizontalBox)
-	            + SHorizontalBox::Slot().AutoWidth().Padding(4)
-	            [
-	                SNew(SButton)
-	                .Text(LOCTEXT("ConnectClientButton", "Connect Client"))
-	                .OnClicked_Raw(this, &FUEJackAudioLinkModule::OnConnectClientClicked)
-	            ]
-	            + SHorizontalBox::Slot().AutoWidth().Padding(4)
-	            [
-	                SNew(SButton)
-	                .Text(LOCTEXT("DisconnectClientButton", "Disconnect Client"))
-	                .OnClicked_Raw(this, &FUEJackAudioLinkModule::OnDisconnectClientClicked)
-	            ]
-	            + SHorizontalBox::Slot().AutoWidth().Padding(4)
-	            [
-	                SNew(SButton)
-	                .Text(LOCTEXT("StopAnyServerButton", "Force Stop Any Server"))
-	                .OnClicked_Raw(this, &FUEJackAudioLinkModule::OnStopAnyServerClicked)
-	            ]
-	        ]
-	        + SVerticalBox::Slot().AutoHeight().Padding(4)
-	        [
-	            SNew(SCheckBox)
-	            .OnCheckStateChanged_Raw(this, &FUEJackAudioLinkModule::OnAutoConnectChanged)
-	            .IsChecked_Lambda([](){
-				const UJackAudioLinkSettings* Settings = GetDefault<UJackAudioLinkSettings>();
-				return (Settings && Settings->bAutoConnectToNewClients) ? ECheckBoxState::Checked : ECheckBoxState::Unchecked;
-			})
-	            [ SNew(STextBlock).Text(LOCTEXT("AutoConnectLabel", "Auto-connect new clients")) ]
+	            SNew(SUniformGridPanel)
+	            .SlotPadding(FMargin(4))
+	            .MinDesiredSlotWidth(160.f)
+	            .MinDesiredSlotHeight(32.f)
+	            + SUniformGridPanel::Slot(0,0)
+	            [ SNew(SButton).Text(LOCTEXT("StartServerButton", "Start Server")).OnClicked_Raw(this, &FUEJackAudioLinkModule::OnStartServerClicked) ]
+	            + SUniformGridPanel::Slot(0,1)
+	            [ SNew(SButton).Text(LOCTEXT("StopServerButton",  "Stop Server")).OnClicked_Raw(this, &FUEJackAudioLinkModule::OnStopServerClicked) ]
+	            + SUniformGridPanel::Slot(1,0)
+	            [ SNew(SButton).Text(LOCTEXT("ConnectClientButton",    "Connect Client")).OnClicked_Raw(this, &FUEJackAudioLinkModule::OnConnectClientClicked) ]
+	            + SUniformGridPanel::Slot(1,1)
+	            [ SNew(SButton).Text(LOCTEXT("DisconnectClientButton", "Disconnect Client")).OnClicked_Raw(this, &FUEJackAudioLinkModule::OnDisconnectClientClicked) ]
 	        ]
 	        + SVerticalBox::Slot().AutoHeight().Padding(4)
 	        [
 	            SNew(SButton)
 	            .Text(LOCTEXT("OpenSettingsButton", "Open Plugin Settings"))
 	            .OnClicked_Raw(this, &FUEJackAudioLinkModule::OnOpenSettingsClicked)
-	        ]
-	        + SVerticalBox::Slot().AutoHeight().Padding(4)
-	        [
-	            SNew(STextBlock)
-	            .AutoWrapText(true)
-	            .Text_Lambda([]()
-	            {
-	                FString Info;
-	#if WITH_JACK
-	                Info += TEXT("Diagnostics:\n");
-	                Info += FString::Printf(TEXT("  Version: %s\n"), *FJackServerController::Get().GetVersion());
-	                
-	                if (FJackServerController::Get().WasServerStartedByPlugin())
-	                {
-	                    FString Backend = FJackServerController::Get().GetLastStartedDriver();
-	                    Info += FString::Printf(TEXT("  Backend: %s\n"), Backend.IsEmpty() ? TEXT("Unknown") : *Backend);
-	                    Info += TEXT("  Plugin Started: Yes\n");
-	                }
-	                else
-	                {
-	                    Info += TEXT("  Backend: External/Unknown\n");
-	                    Info += TEXT("  Plugin Started: No\n");
-	                }
-	                
-	                if (FJackClientManager::Get().IsConnected())
-	                {
-	                    Info += FString::Printf(TEXT("  Client: %s\n"), *FJackClientManager::Get().GetClientName());
-	                }
-	                else
-	                {
-	                    Info += TEXT("  Client: Not connected\n");
-	                }
-	#else
-	                Info += TEXT("Diagnostics: WITH_JACK=0 (headers/libs not linked)\n");
-	#endif
-	                return FText::FromString(Info);
-	            })
 	        ]
 	    ];
 
@@ -396,19 +406,10 @@ FText FUEJackAudioLinkModule::GetStatusText() const
 	
 	bool bClient = FJackClientManager::Get().IsConnected();
 	FString ClientName = bClient ? FJackClientManager::Get().GetClientName() : FString();
-	uint32 SR = static_cast<uint32>(MonState.SampleRate);
-	uint32 BS = static_cast<uint32>(MonState.BufferSize);
+	uint32 SR = 0;
+	uint32 BS = 0;
+	GetEffectiveServerAudioConfig(SR, BS);
 	
-	// If monitor has no SR/BS yet but server is up, probe once
-	if ((!SR || !BS) && bAnyServerRunning)
-	{
-		int32 ProbeSR = 0, ProbeBS = 0;
-		if (FJackServerController::Get().GetServerAudioConfig(ProbeSR, ProbeBS))
-		{
-			SR = static_cast<uint32>(ProbeSR);
-			BS = static_cast<uint32>(ProbeBS);
-		}
-	}
 	const bool bHasCfg = (SR > 0 && BS > 0);
 	
 	// Show real server status with ownership info
@@ -422,31 +423,18 @@ FText FUEJackAudioLinkModule::GetStatusText() const
 		ServerStatus = TEXT("NOT RUNNING");
 	}
 	
-	Status = FString::Printf(TEXT("Server: %s\nVersion: %s\nClient: %s%s%s"),
-		*ServerStatus,
-		*Version,
-		bClient ? TEXT("CONNECTED ") : TEXT("NOT CONNECTED"),
-		bClient && !ClientName.IsEmpty() ? *FString::Printf(TEXT("(%s)"), *ClientName) : TEXT(""),
+	Status = FString::Printf(TEXT("Server Audio Settings: %s"),
+		
 		bHasCfg ? *FString::Printf(TEXT("\nAudio: %u Hz, %u frames"), SR, BS) : TEXT(""));
-
-	// Show backend information only for plugin-started servers
-	if (FJackServerController::Get().WasServerStartedByPlugin())
-	{
-		FString Backend = FJackServerController::Get().GetLastStartedDriver();
-		if (!Backend.IsEmpty())
-		{
-			Status += FString::Printf(TEXT("\nBackend: %s"), *Backend);
-		}
-	}
 
 	// Expected vs actual
 	if (bHasCfg)
 	{
 		if (const UJackAudioLinkSettings* Settings = GetDefault<UJackAudioLinkSettings>())
 		{
-			if (static_cast<int32>(SR) != Settings->SampleRate || static_cast<int32>(BS) != Settings->BufferSize)
+			if (static_cast<int32>(SR) != Settings->GetSampleRateValue() || static_cast<int32>(BS) != Settings->GetBufferSizeValue())
 			{
-				Status += FString::Printf(TEXT("\nSettings mismatch: wants %d Hz, %d frames → Restart required"), Settings->SampleRate, Settings->BufferSize);
+				Status += FString::Printf(TEXT("\nSettings mismatch: wants %d Hz, %d frames → Restart required"), Settings->GetSampleRateValue(), Settings->GetBufferSizeValue());
 			}
 		}
 	}
@@ -461,12 +449,14 @@ FReply FUEJackAudioLinkModule::OnRestartServerClicked()
 	const UJackAudioLinkSettings* Settings = GetDefault<UJackAudioLinkSettings>();
 #if WITH_JACK
 	UE_LOG(LogJackAudioLink, Display, TEXT("UI: Apply & Restart button clicked"));
-	UE_LOG(LogJackAudioLink, Display, TEXT("Restarting JACK server with settings: %d Hz, %d frames, driver: %s"), 
-		Settings->SampleRate, Settings->BufferSize, Settings->BackendDriver.IsEmpty() ? TEXT("default") : *Settings->BackendDriver);
+	UE_LOG(LogJackAudioLink, Display, TEXT("Restarting JACK server with settings: %d Hz, %d frames"), 
+		Settings->GetSampleRateValue(), Settings->GetBufferSizeValue());
 	
-	if (FJackServerController::Get().RestartServer(Settings->SampleRate, Settings->BufferSize, Settings->BackendDriver, Settings->JackdPath))
+	if (FJackServerController::Get().RestartServer(Settings->GetSampleRateValue(), Settings->GetBufferSizeValue()))
 	{
 		UE_LOG(LogJackAudioLink, Display, TEXT("JACK server restarted successfully"));
+		// Ensure monitor reattaches quickly after restart
+		FJackServerMonitor::Get().RequestImmediateProbe();
 		
 		FString ClientName = Settings->ClientName.IsEmpty() ? FString::Printf(TEXT("UnrealJackClient-%s"), FApp::GetProjectName()) : Settings->ClientName;
 		UE_LOG(LogJackAudioLink, Display, TEXT("Reconnecting JACK client: %s"), *ClientName);
@@ -481,12 +471,7 @@ FReply FUEJackAudioLinkModule::OnRestartServerClicked()
 				{
 					UE_LOG(LogJackAudioLink, Display, TEXT("JACK client re-activated successfully"));
 					
-					if (GEngine && GEngine->GetEngineSubsystem<UUEJackAudioLinkSubsystem>())
-					{
-						GEngine->GetEngineSubsystem<UUEJackAudioLinkSubsystem>()->StartAutoConnect(Settings->ClientMonitorInterval, Settings->bAutoConnectToNewClients);
-						UE_LOG(LogJackAudioLink, Display, TEXT("Auto-connect started (enabled: %s, interval: %.1fs)"), 
-							Settings->bAutoConnectToNewClients ? TEXT("yes") : TEXT("no"), Settings->ClientMonitorInterval);
-					}
+					// Auto-connect removed
 				}
 				else
 				{
@@ -585,42 +570,18 @@ FReply FUEJackAudioLinkModule::OnDisconnectClientClicked()
 	return FReply::Handled();
 }
 
-void FUEJackAudioLinkModule::OnAutoConnectChanged(ECheckBoxState NewState)
-{
-	UJackAudioLinkSettings* Settings = GetMutableDefault<UJackAudioLinkSettings>();
-	Settings->bAutoConnectToNewClients = (NewState == ECheckBoxState::Checked);
-	Settings->SaveConfig();
-#if WITH_JACK
-	if (GEngine && GEngine->GetEngineSubsystem<UUEJackAudioLinkSubsystem>())
-	{
-		GEngine->GetEngineSubsystem<UUEJackAudioLinkSubsystem>()->StartAutoConnect(Settings->ClientMonitorInterval, Settings->bAutoConnectToNewClients);
-	}
-#endif
-	if (StatusTextBlock.IsValid())
-	{
-		StatusTextBlock->SetText(GetStatusText());
-	}
-}
+// Auto-connect removed
 
 bool FUEJackAudioLinkModule::IsRestartRequired(FString& OutMessage) const
 {
 #if WITH_JACK
-	uint32 SR = FJackClientManager::Get().GetSampleRate();
-	uint32 BS = FJackClientManager::Get().GetBufferSize();
-	if ((!SR || !BS))
-	{
-		int32 ProbeSR = 0, ProbeBS = 0;
-		if (FJackServerController::Get().GetServerAudioConfig(ProbeSR, ProbeBS))
-		{
-			SR = static_cast<uint32>(ProbeSR);
-			BS = static_cast<uint32>(ProbeBS);
-		}
-	}
+	uint32 SR = 0, BS = 0;
+	GetEffectiveServerAudioConfig(SR, BS);
 	if (const UJackAudioLinkSettings* Settings = GetDefault<UJackAudioLinkSettings>())
 	{
-		if (SR && BS && (static_cast<int32>(SR) != Settings->SampleRate || static_cast<int32>(BS) != Settings->BufferSize))
+		if (SR && BS && (static_cast<int32>(SR) != Settings->GetSampleRateValue() || static_cast<int32>(BS) != Settings->GetBufferSizeValue()))
 		{
-			OutMessage = FString::Printf(TEXT("Restart required: wants %d Hz, %d frames"), Settings->SampleRate, Settings->BufferSize);
+			OutMessage = FString::Printf(TEXT("Restart required: wants %d Hz, %d frames"), Settings->GetSampleRateValue(), Settings->GetBufferSizeValue());
 			return true;
 		}
 	}
@@ -640,9 +601,9 @@ FReply FUEJackAudioLinkModule::OnStartServerClicked()
 	const UJackAudioLinkSettings* Settings = GetDefault<UJackAudioLinkSettings>();
 	if (Settings)
 	{
-		if (FJackServerController::Get().StartServer(Settings->SampleRate, Settings->BufferSize, Settings->BackendDriver, Settings->JackdPath))
+		if (FJackServerController::Get().StartServer(Settings->GetSampleRateValue(), Settings->GetBufferSizeValue()))
 		{
-			UE_LOG(LogJackAudioLink, Display, TEXT("JACK server started successfully (%d Hz, %d frames)"), Settings->SampleRate, Settings->BufferSize);
+			UE_LOG(LogJackAudioLink, Display, TEXT("JACK server started successfully (%d Hz, %d frames)"), Settings->GetSampleRateValue(), Settings->GetBufferSizeValue());
 			// Immediately probe sentinel so UI reflects RUNNING without waiting for next tick
 			FJackServerMonitor::Get().RequestImmediateProbe();
 			// Also schedule a couple of short delayed probes to catch the server becoming ready
@@ -675,41 +636,8 @@ FReply FUEJackAudioLinkModule::OnStopServerClicked()
 {
 #if WITH_JACK
 	UE_LOG(LogJackAudioLink, Display, TEXT("UI: Stop Server button clicked"));
-	
-	// First, properly disconnect our client to avoid invalid state
-	if (FJackClientManager::Get().IsConnected())
-	{
-		UE_LOG(LogJackAudioLink, Display, TEXT("Disconnecting JACK client before stopping server..."));
-		FJackClientManager::Get().Deactivate();
-		FJackClientManager::Get().Disconnect();
-		UE_LOG(LogJackAudioLink, Display, TEXT("JACK client disconnected safely"));
-	}
-	
-	// Now stop the server
-	if (FJackServerController::Get().StopServer())
-	{
-		UE_LOG(LogJackAudioLink, Display, TEXT("JACK server stopped successfully"));
-		// Immediately mark monitor down to avoid stale RUNNING in UI
-		FJackServerMonitor::Get().MarkServerDown();
-	}
-	else
-	{
-		UE_LOG(LogJackAudioLink, Warning, TEXT("Failed to stop JACK server (or no server was running)"));
-		// If an external server is running, ask sentinel to reattach (so the stop button reflects reality)
-		if (FJackServerController::Get().IsAnyServerAvailable())
-		{
-			FJackServerMonitor::Get().RequestImmediateProbe();
-		}
-	}
-#endif
-	UpdateStatusDisplay();
-	return FReply::Handled();
-}
 
-FReply FUEJackAudioLinkModule::OnStopAnyServerClicked()
-{
-#if WITH_JACK
-	UE_LOG(LogJackAudioLink, Display, TEXT("UI: Force Stop Any Server clicked"));
+	// Simplified behavior: force stop any JACK server processes
 	if (FJackServerController::Get().StopAnyServer())
 	{
 		UE_LOG(LogJackAudioLink, Display, TEXT("Force-stopped JACK server"));
@@ -724,6 +652,8 @@ FReply FUEJackAudioLinkModule::OnStopAnyServerClicked()
 	UpdateStatusDisplay();
 	return FReply::Handled();
 }
+
+// Removed Force Stop handler: Stop button now performs this behavior
 
 bool FUEJackAudioLinkModule::TickStatusUpdate(float /*DeltaTime*/)
 {
