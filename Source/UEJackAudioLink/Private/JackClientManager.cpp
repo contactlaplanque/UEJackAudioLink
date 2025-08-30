@@ -1,10 +1,29 @@
 #include "JackClientManager.h"
 #include "UEJackAudioLinkLog.h"
 #include "Async/Async.h"
+#include "UEJackAudioLinkSubsystem.h"
+#include "Engine/Engine.h"
 
 #if WITH_JACK
 #include <jack/jack.h>
 #include <jack/types.h>
+// Escape regex metacharacters for JACK's POSIX regex patterns in jack_get_ports
+static FString EscapeRegex(const FString& In)
+{
+	// include backslash in the set; double-escape here to keep the literal valid at EOL
+	static const TCHAR* Meta = TEXT(".^$|()[]{}*+?\\");
+	FString Out;
+	Out.Reserve(In.Len() * 2);
+	for (TCHAR C : In)
+	{
+		if (FCString::Strchr(Meta, C) != nullptr)
+		{
+			Out.AppendChar(TEXT('\\'));
+		}
+		Out.AppendChar(C);
+	}
+	return Out;
+}
 #endif
 
 // FAudioRingBuffer implementation
@@ -125,6 +144,7 @@ bool FJackClientManager::Connect(const FString& ClientName)
 	}, this);
 	
 	jack_set_xrun_callback(JackClient, [](void* /*arg*/){ UE_LOG(LogJackAudioLink, Verbose, TEXT("JACK xrun")); return 0; }, this);
+	jack_set_client_registration_callback(JackClient, &FJackClientManager::ClientRegistrationCallback, this);
 	jack_set_port_registration_callback(JackClient, &FJackClientManager::PortRegistrationCallback, this);
 	
 	// Set the audio process callback
@@ -134,6 +154,40 @@ bool FJackClientManager::Connect(const FString& ClientName)
 #else
 	UE_LOG(LogJackAudioLink, Warning, TEXT("WITH_JACK=0: Connect is a no-op"));
 	return false;
+#endif
+}
+void FJackClientManager::ClientRegistrationCallback(const char* Name, int Register, void* Arg)
+{
+#if WITH_JACK
+	FJackClientManager* Self = static_cast<FJackClientManager*>(Arg);
+	if (!Self || !Self->JackClient || !Name) { return; }
+	const bool bRegistered = (Register != 0);
+	const FString ClientName = UTF8_TO_TCHAR(Name);
+	if (bRegistered)
+	{
+	// Filter out our own client to avoid noise
+	if (ClientName == Self->GetClientName()) { return; }
+	// Do not broadcast here: ports may not be registered yet. PortRegistrationCallback will announce with proper counts.
+	UE_LOG(LogJackAudioLink, Verbose, TEXT("Client registered: %s"), *ClientName);
+	}
+	else
+	{
+		if (Self->KnownClientsLogged.Contains(ClientName))
+		{
+			UE_LOG(LogJackAudioLink, Log, TEXT("Client unregistered: %s"), *ClientName);
+			Self->KnownClientsLogged.Remove(ClientName);
+			AsyncTask(ENamedThreads::GameThread, [ClientName]()
+			{
+				if (GEngine)
+				{
+					if (UUEJackAudioLinkSubsystem* Subsys = GEngine->GetEngineSubsystem<UUEJackAudioLinkSubsystem>())
+					{
+						Subsys->NotifyClientDisconnected(ClientName);
+					}
+				}
+			});
+		}
+	}
 #endif
 }
 
@@ -372,6 +426,14 @@ uint32 FJackClientManager::GetBufferSize() const
 	return 0;
 }
 
+float FJackClientManager::GetCpuLoad() const
+{
+#if WITH_JACK
+	if (JackClient) { return jack_cpu_load(JackClient); }
+#endif
+	return 0.0f;
+}
+
 bool FJackClientManager::Activate()
 {
 #if WITH_JACK
@@ -396,7 +458,7 @@ void FJackClientManager::PortRegistrationCallback(unsigned int PortId, int Regis
 {
 #if WITH_JACK
 	FJackClientManager* Self = static_cast<FJackClientManager*>(Arg);
-	if (!Self || !Self->JackClient || Register == 0)
+	if (!Self || !Self->JackClient)
 	{
 		return;
 	}
@@ -410,20 +472,63 @@ void FJackClientManager::PortRegistrationCallback(unsigned int PortId, int Regis
 	{
 		return;
 	}
+	const bool bRegistered = (Register != 0);
 	FString PortFull = UTF8_TO_TCHAR(NameC);
 	FString ClientName;
 	if (!PortFull.Split(TEXT(":"), &ClientName, nullptr))
 	{
 		return;
 	}
-	if (!Self->KnownClientsLogged.Contains(ClientName))
+
+	if (bRegistered)
 	{
+		// New/added port: if first time we see client, announce connect
+		if (!Self->KnownClientsLogged.Contains(ClientName))
+		{
+			TArray<FString> Inputs = Self->GetClientInputPorts(ClientName);
+			TArray<FString> Outputs = Self->GetClientOutputPorts(ClientName);
+			const int32 NumIn = Inputs.Num();
+			const int32 NumOut = Outputs.Num();
+			UE_LOG(LogJackAudioLink, Log, TEXT("Client connected: %s (in:%d, out:%d)"), *ClientName, NumIn, NumOut);
+			Self->KnownClientsLogged.Add(ClientName);
+			// Fire subsystem event on game thread
+			AsyncTask(ENamedThreads::GameThread, [ClientName, NumIn, NumOut]()
+			{
+				if (GEngine)
+				{
+					if (UUEJackAudioLinkSubsystem* Subsys = GEngine->GetEngineSubsystem<UUEJackAudioLinkSubsystem>())
+					{
+						Subsys->NotifyClientConnected(ClientName, NumIn, NumOut);
+					}
+				}
+			});
+			// Optional auto-connect
+			Self->AutoConnectToClient(ClientName);
+		}
+	}
+	else
+	{
+		// A port was unregistered; if client has no more ports, consider it disconnected
+		TArray<FString> Inputs = Self->GetClientInputPorts(ClientName);
 		TArray<FString> Outputs = Self->GetClientOutputPorts(ClientName);
-		int32 NumOut = Outputs.Num();
-		UE_LOG(LogJackAudioLink, Log, TEXT("Client connected: %s (outputs: %d)"), *ClientName, NumOut);
-		Self->KnownClientsLogged.Add(ClientName);
-		// Optionally auto-connect
-		Self->AutoConnectToClient(ClientName);
+		if (Inputs.Num() == 0 && Outputs.Num() == 0)
+		{
+			if (Self->KnownClientsLogged.Contains(ClientName))
+			{
+				UE_LOG(LogJackAudioLink, Log, TEXT("Client disconnected: %s"), *ClientName);
+				Self->KnownClientsLogged.Remove(ClientName);
+				AsyncTask(ENamedThreads::GameThread, [ClientName]()
+				{
+					if (GEngine)
+					{
+						if (UUEJackAudioLinkSubsystem* Subsys = GEngine->GetEngineSubsystem<UUEJackAudioLinkSubsystem>())
+						{
+							Subsys->NotifyClientDisconnected(ClientName);
+						}
+					}
+				});
+			}
+		}
 	}
 #endif
 }
@@ -487,8 +592,8 @@ TArray<FString> FJackClientManager::GetClientOutputPorts(const FString& ClientNa
     TArray<FString> Ports;
 #if WITH_JACK
     if (!JackClient) { return Ports; }
-    FString Pattern = ClientName + TEXT(":*");
-    FTCHARToUTF8 NameUtf8(*Pattern);
+	const FString Pattern = FString::Printf(TEXT("^(%s):.*$"), *EscapeRegex(ClientName));
+	FTCHARToUTF8 NameUtf8(*Pattern);
     const char** CPorts = jack_get_ports(JackClient, NameUtf8.Get(), JACK_DEFAULT_AUDIO_TYPE, JackPortIsOutput);
     if (CPorts)
     {
@@ -500,4 +605,24 @@ TArray<FString> FJackClientManager::GetClientOutputPorts(const FString& ClientNa
     }
 #endif
     return Ports;
+}
+
+TArray<FString> FJackClientManager::GetClientInputPorts(const FString& ClientName) const
+{
+	TArray<FString> Ports;
+#if WITH_JACK
+	if (!JackClient) { return Ports; }
+	const FString Pattern = FString::Printf(TEXT("^(%s):.*$"), *EscapeRegex(ClientName));
+	FTCHARToUTF8 NameUtf8(*Pattern);
+	const char** CPorts = jack_get_ports(JackClient, NameUtf8.Get(), JACK_DEFAULT_AUDIO_TYPE, JackPortIsInput);
+	if (CPorts)
+	{
+		for (int i = 0; CPorts[i] != nullptr; ++i)
+		{
+			Ports.Add(UTF8_TO_TCHAR(CPorts[i]));
+		}
+		jack_free(const_cast<char**>(CPorts));
+	}
+#endif
+	return Ports;
 }

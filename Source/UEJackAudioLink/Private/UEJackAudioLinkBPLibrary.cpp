@@ -121,5 +121,104 @@ int32 UUEJackAudioLinkBPLibrary::GetBufferSize()
 	return 0;
 }
 
+float UUEJackAudioLinkBPLibrary::GetCpuLoad()
+{
+	if (GEngine)
+	{
+		if (UUEJackAudioLinkSubsystem* Subsys = GEngine->GetEngineSubsystem<UUEJackAudioLinkSubsystem>())
+		{
+			return Subsys->GetCpuLoad();
+		}
+	}
+	return 0.0f;
+}
+
+TArray<FString> UUEJackAudioLinkBPLibrary::GetConnectedClients()
+{
+	if (GEngine)
+	{
+		if (UUEJackAudioLinkSubsystem* Subsys = GEngine->GetEngineSubsystem<UUEJackAudioLinkSubsystem>())
+		{
+			return Subsys->GetConnectedClients();
+		}
+	}
+	return {};
+}
+
+void UUEJackAudioLinkBPLibrary::GetClientPorts(const FString& ClientName, TArray<FString>& OutInputPorts, TArray<FString>& OutOutputPorts)
+{
+	OutInputPorts.Reset();
+	OutOutputPorts.Reset();
+	if (GEngine)
+	{
+		if (UUEJackAudioLinkSubsystem* Subsys = GEngine->GetEngineSubsystem<UUEJackAudioLinkSubsystem>())
+		{
+			Subsys->GetClientPorts(ClientName, OutInputPorts, OutOutputPorts);
+		}
+	}
+}
+
+bool UUEJackAudioLinkBPLibrary::ConnectPorts(const FString& SourcePort, const FString& DestinationPort)
+{
+	if (GEngine)
+	{
+		if (UUEJackAudioLinkSubsystem* Subsys = GEngine->GetEngineSubsystem<UUEJackAudioLinkSubsystem>())
+		{
+			return Subsys->ConnectPorts(SourcePort, DestinationPort);
+		}
+	}
+	return false;
+}
+
+bool UUEJackAudioLinkBPLibrary::DisconnectPorts(const FString& SourcePort, const FString& DestinationPort)
+{
+	if (GEngine)
+	{
+		if (UUEJackAudioLinkSubsystem* Subsys = GEngine->GetEngineSubsystem<UUEJackAudioLinkSubsystem>())
+		{
+			return Subsys->DisconnectPorts(SourcePort, DestinationPort);
+		}
+	}
+	return false;
+}
+
+bool UUEJackAudioLinkBPLibrary::ConnectPortsByIndex(EJackPortDirection SourceType, const FString& SourceClientName, int32 SourcePortNumber,
+													EJackPortDirection DestType,   const FString& DestClientName,   int32 DestPortNumber)
+{
+	if (GEngine)
+	{
+		if (UUEJackAudioLinkSubsystem* Subsys = GEngine->GetEngineSubsystem<UUEJackAudioLinkSubsystem>())
+		{
+			return Subsys->ConnectPortsByIndex(SourceType, SourceClientName, SourcePortNumber, DestType, DestClientName, DestPortNumber);
+		}
+	}
+	return false;
+}
+
+bool UUEJackAudioLinkBPLibrary::DisconnectPortsByIndex(EJackPortDirection SourceType, const FString& SourceClientName, int32 SourcePortNumber,
+													   EJackPortDirection DestType,   const FString& DestClientName,   int32 DestPortNumber)
+{
+	if (GEngine)
+	{
+		if (UUEJackAudioLinkSubsystem* Subsys = GEngine->GetEngineSubsystem<UUEJackAudioLinkSubsystem>())
+		{
+			return Subsys->DisconnectPortsByIndex(SourceType, SourceClientName, SourcePortNumber, DestType, DestClientName, DestPortNumber);
+		}
+	}
+	return false;
+}
+
+FString UUEJackAudioLinkBPLibrary::GetJackClientName()
+{
+	if (GEngine)
+	{
+		if (UUEJackAudioLinkSubsystem* Subsys = GEngine->GetEngineSubsystem<UUEJackAudioLinkSubsystem>())
+		{
+			return Subsys->GetJackClientName();
+		}
+	}
+	return FString();
+}
+
 
 

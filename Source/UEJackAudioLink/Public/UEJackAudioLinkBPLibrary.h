@@ -2,6 +2,7 @@
 
 #include "CoreMinimal.h"
 #include "Kismet/BlueprintFunctionLibrary.h"
+#include "UEJackAudioLinkSubsystem.h" // for EJackPortDirection
 #include "UEJackAudioLinkBPLibrary.generated.h"
 
 UCLASS()
@@ -39,4 +40,35 @@ public:
 
 	UFUNCTION(BlueprintPure, Category="JackAudioLink|Audio")
 	static int32 GetBufferSize();
+
+	// Info
+	UFUNCTION(BlueprintPure, Category="JackAudioLink|Info")
+	static float GetCpuLoad();
+
+	// Discovery
+	UFUNCTION(BlueprintCallable, Category="JackAudioLink|Discovery")
+	static TArray<FString> GetConnectedClients();
+
+	UFUNCTION(BlueprintCallable, Category="JackAudioLink|Discovery")
+	static void GetClientPorts(const FString& ClientName, TArray<FString>& OutInputPorts, TArray<FString>& OutOutputPorts);
+
+	// Routing
+	UFUNCTION(BlueprintCallable, Category="JackAudioLink|Routing")
+	static bool ConnectPorts(const FString& SourcePort, const FString& DestinationPort);
+
+	UFUNCTION(BlueprintCallable, Category="JackAudioLink|Routing")
+	static bool DisconnectPorts(const FString& SourcePort, const FString& DestinationPort);
+
+	// Routing by client + index (1-based)
+	UFUNCTION(BlueprintCallable, Category="JackAudioLink|Routing")
+	static bool ConnectPortsByIndex(EJackPortDirection SourceType, const FString& SourceClientName, int32 SourcePortNumber,
+									 EJackPortDirection DestType,   const FString& DestClientName,   int32 DestPortNumber);
+
+	UFUNCTION(BlueprintCallable, Category="JackAudioLink|Routing")
+	static bool DisconnectPortsByIndex(EJackPortDirection SourceType, const FString& SourceClientName, int32 SourcePortNumber,
+									   EJackPortDirection DestType,   const FString& DestClientName,   int32 DestPortNumber);
+
+	// Our Unreal JACK client name
+	UFUNCTION(BlueprintPure, Category="JackAudioLink|Info")
+	static FString GetJackClientName();
 };

@@ -68,12 +68,17 @@ public:
 	FString GetClientName() const;
 	uint32 GetSampleRate() const;
 	uint32 GetBufferSize() const;
+	float GetCpuLoad() const;
+
+	// Per-client port queries
+	TArray<FString> GetClientInputPorts(const FString& ClientName) const;
 
 private:
 	FJackClientManager();
 	~FJackClientManager();
 
 	// JACK callbacks
+	static void ClientRegistrationCallback(const char* Name, int Register, void* Arg);
 	static void PortRegistrationCallback(unsigned int PortId, int Register, void* Arg);
 	static int ProcessCallback(jack_nframes_t NumFrames, void* Arg);
 
