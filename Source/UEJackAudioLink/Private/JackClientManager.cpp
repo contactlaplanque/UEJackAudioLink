@@ -7,6 +7,75 @@
 #include <jack/types.h>
 #endif
 
+// FAudioRingBuffer implementation
+void FAudioRingBuffer::Write(const float* Data, int32 NumSamples)
+{
+    FScopeLock Lock(&CriticalSection);
+    for (int32 i = 0; i < NumSamples; ++i)
+    {
+        Buffer[WritePos] = Data[i];
+        WritePos = (WritePos + 1) % Capacity;
+        // If buffer is full, advance read position to avoid overflow
+        if (WritePos == ReadPos)
+        {
+            ReadPos = (ReadPos + 1) % Capacity;
+        }
+    }
+}
+
+int32 FAudioRingBuffer::Read(float* OutData, int32 NumSamples)
+{
+    FScopeLock Lock(&CriticalSection);
+    int32 SamplesRead = 0;
+    while (SamplesRead < NumSamples && ReadPos != WritePos)
+    {
+        OutData[SamplesRead] = Buffer[ReadPos];
+        ReadPos = (ReadPos + 1) % Capacity;
+        SamplesRead++;
+    }
+    // Zero remaining samples if requested more than available
+    for (int32 i = SamplesRead; i < NumSamples; ++i)
+    {
+        OutData[i] = 0.0f;
+    }
+    return SamplesRead;
+}
+
+void FAudioRingBuffer::Clear()
+{
+    FScopeLock Lock(&CriticalSection);
+    ReadPos = WritePos = 0;
+    Buffer.SetNumZeroed(Capacity);
+}
+
+int32 FAudioRingBuffer::GetAvailableRead() const
+{
+    FScopeLock Lock(&CriticalSection);
+    return (WritePos - ReadPos + Capacity) % Capacity;
+}
+
+float FAudioRingBuffer::GetRMSLevel() const
+{
+    FScopeLock Lock(&CriticalSection);
+    if (ReadPos == WritePos) return 0.0f;
+    
+    float Sum = 0.0f;
+    int32 Count = 0;
+    int32 Pos = ReadPos;
+    
+    // Sample recent 1024 samples for RMS calculation
+    int32 SamplesToCheck = FMath::Min(1024, GetAvailableRead());
+    for (int32 i = 0; i < SamplesToCheck; ++i)
+    {
+        float Sample = Buffer[Pos];
+        Sum += Sample * Sample;
+        Pos = (Pos + 1) % Capacity;
+        Count++;
+    }
+    
+    return Count > 0 ? FMath::Sqrt(Sum / Count) : 0.0f;
+}
+
 FJackClientManager& FJackClientManager::Get()
 {
 	static FJackClientManager Singleton;
@@ -38,8 +107,8 @@ bool FJackClientManager::Connect(const FString& ClientName)
 	{
 		UE_LOG(LogJackAudioLink, Verbose, TEXT("JACK assigned unique name: %s"), UTF8_TO_TCHAR(jack_get_client_name(JackClient)));
 	}
+	
 	// Setup essential callbacks
-#if WITH_JACK
 	jack_on_shutdown(JackClient, [](void* arg)
 	{
 		FJackClientManager* Self = static_cast<FJackClientManager*>(arg);
@@ -54,9 +123,13 @@ bool FJackClientManager::Connect(const FString& ClientName)
 			});
 		}
 	}, this);
+	
 	jack_set_xrun_callback(JackClient, [](void* /*arg*/){ UE_LOG(LogJackAudioLink, Verbose, TEXT("JACK xrun")); return 0; }, this);
 	jack_set_port_registration_callback(JackClient, &FJackClientManager::PortRegistrationCallback, this);
-#endif
+	
+	// Set the audio process callback
+	jack_set_process_callback(JackClient, &FJackClientManager::ProcessCallback, this);
+	
 	return true;
 #else
 	UE_LOG(LogJackAudioLink, Warning, TEXT("WITH_JACK=0: Connect is a no-op"));
@@ -91,19 +164,33 @@ bool FJackClientManager::RegisterAudioPorts(int32 NumInputs, int32 NumOutputs, c
 		return false;
 	}
 	UnregisterAllPorts();
+	
+	// Create ring buffers for inputs and outputs
+	InputRingBuffers.Empty();
+	OutputRingBuffers.Empty();
+	
 	for (int32 i = 0; i < NumInputs; ++i)
 	{
 		FString Name = FString::Printf(TEXT("%s_in_%d"), *BaseName, i + 1);
 		FTCHARToUTF8 NameUtf8(*Name);
 		jack_port_t* Port = jack_port_register(JackClient, NameUtf8.Get(), JACK_DEFAULT_AUDIO_TYPE, JackPortIsInput, 0);
-		if (Port) { InputPorts.Add(Port); }
+		if (Port) 
+		{ 
+			InputPorts.Add(Port);
+			InputRingBuffers.Add(MakeUnique<FAudioRingBuffer>(8192));
+		}
 	}
+	
 	for (int32 i = 0; i < NumOutputs; ++i)
 	{
 		FString Name = FString::Printf(TEXT("%s_out_%d"), *BaseName, i + 1);
 		FTCHARToUTF8 NameUtf8(*Name);
 		jack_port_t* Port = jack_port_register(JackClient, NameUtf8.Get(), JACK_DEFAULT_AUDIO_TYPE, JackPortIsOutput, 0);
-		if (Port) { OutputPorts.Add(Port); }
+		if (Port) 
+		{ 
+			OutputPorts.Add(Port);
+			OutputRingBuffers.Add(MakeUnique<FAudioRingBuffer>(8192));
+		}
 	}
 	return true;
 #else
@@ -124,7 +211,91 @@ void FJackClientManager::UnregisterAllPorts()
 	}
 	InputPorts.Empty();
 	OutputPorts.Empty();
+	InputRingBuffers.Empty();
+	OutputRingBuffers.Empty();
 #endif
+}
+
+// JACK Process Callback - This runs in real-time thread
+int FJackClientManager::ProcessCallback(jack_nframes_t NumFrames, void* Arg)
+{
+#if WITH_JACK
+	FJackClientManager* Self = static_cast<FJackClientManager*>(Arg);
+	if (!Self || !Self->JackClient)
+	{
+		return 0;
+	}
+
+	// Process input ports
+	for (int32 i = 0; i < Self->InputPorts.Num(); ++i)
+	{
+		if (Self->InputPorts[i] && Self->InputRingBuffers.IsValidIndex(i))
+		{
+			jack_default_audio_sample_t* InBuffer = static_cast<jack_default_audio_sample_t*>(
+				jack_port_get_buffer(Self->InputPorts[i], NumFrames));
+			if (InBuffer)
+			{
+				Self->InputRingBuffers[i]->Write(InBuffer, NumFrames);
+			}
+		}
+	}
+
+	// Process output ports
+	for (int32 i = 0; i < Self->OutputPorts.Num(); ++i)
+	{
+		if (Self->OutputPorts[i] && Self->OutputRingBuffers.IsValidIndex(i))
+		{
+			jack_default_audio_sample_t* OutBuffer = static_cast<jack_default_audio_sample_t*>(
+				jack_port_get_buffer(Self->OutputPorts[i], NumFrames));
+			if (OutBuffer)
+			{
+				// Read from ring buffer to output
+				Self->OutputRingBuffers[i]->Read(OutBuffer, NumFrames);
+			}
+		}
+	}
+
+	return 0;
+#else
+	return 0;
+#endif
+}
+
+// Audio I/O methods
+TArray<float> FJackClientManager::ReadAudioBuffer(int32 ChannelIndex, int32 NumSamples)
+{
+	TArray<float> Result;
+#if WITH_JACK
+	if (InputRingBuffers.IsValidIndex(ChannelIndex) && InputRingBuffers[ChannelIndex].IsValid())
+	{
+		Result.SetNumZeroed(NumSamples);
+		InputRingBuffers[ChannelIndex]->Read(Result.GetData(), NumSamples);
+	}
+#endif
+	return Result;
+}
+
+bool FJackClientManager::WriteAudioBuffer(int32 ChannelIndex, const TArray<float>& AudioData)
+{
+#if WITH_JACK
+	if (OutputRingBuffers.IsValidIndex(ChannelIndex) && OutputRingBuffers[ChannelIndex].IsValid())
+	{
+		OutputRingBuffers[ChannelIndex]->Write(AudioData.GetData(), AudioData.Num());
+		return true;
+	}
+#endif
+	return false;
+}
+
+float FJackClientManager::GetInputLevel(int32 ChannelIndex) const
+{
+#if WITH_JACK
+	if (InputRingBuffers.IsValidIndex(ChannelIndex) && InputRingBuffers[ChannelIndex].IsValid())
+	{
+		return InputRingBuffers[ChannelIndex]->GetRMSLevel();
+	}
+#endif
+	return 0.0f;
 }
 
 TArray<FString> FJackClientManager::GetAvailablePorts(const FString& NamePattern, const FString& TypePattern, uint32 Flags) const
@@ -330,5 +501,3 @@ TArray<FString> FJackClientManager::GetClientOutputPorts(const FString& ClientNa
 #endif
     return Ports;
 }
-
-

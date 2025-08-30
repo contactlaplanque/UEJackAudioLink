@@ -23,6 +23,20 @@ public:
 
 	UFUNCTION(BlueprintPure, Category="JackAudioLink")
 	static bool IsClientConnected();
+
+	// Audio I/O functions
+	UFUNCTION(BlueprintCallable, Category="JackAudioLink|Audio")
+	static TArray<float> ReadAudioBuffer(int32 ChannelIndex, int32 NumSamples);
+
+	UFUNCTION(BlueprintCallable, Category="JackAudioLink|Audio")
+	static bool WriteAudioBuffer(int32 ChannelIndex, const TArray<float>& AudioData);
+
+	UFUNCTION(BlueprintPure, Category="JackAudioLink|Audio")
+	static float GetInputLevel(int32 ChannelIndex);
+
+	UFUNCTION(BlueprintPure, Category="JackAudioLink|Audio")
+	static int32 GetSampleRate();
+
+	UFUNCTION(BlueprintPure, Category="JackAudioLink|Audio")
+	static int32 GetBufferSize();
 };
-
-

@@ -26,12 +26,28 @@ public:
 	UFUNCTION(BlueprintPure, Category="JackAudioLink")
 	bool IsClientConnected() const;
 
-	// Auto-connect management
-	void StartAutoConnect(float IntervalSeconds, bool bEnable);
-	void StopAutoConnect();
+	// Audio I/O methods
+	UFUNCTION(BlueprintCallable, Category="JackAudioLink|Audio")
+	TArray<float> ReadAudioBuffer(int32 ChannelIndex, int32 NumSamples);
+
+	UFUNCTION(BlueprintCallable, Category="JackAudioLink|Audio")
+	bool WriteAudioBuffer(int32 ChannelIndex, const TArray<float>& AudioData);
+
+	UFUNCTION(BlueprintPure, Category="JackAudioLink|Audio")
+	float GetInputLevel(int32 ChannelIndex) const;
+
+	UFUNCTION(BlueprintPure, Category="JackAudioLink|Audio")
+	int32 GetSampleRate() const;
+
+	UFUNCTION(BlueprintPure, Category="JackAudioLink|Audio")
+	int32 GetBufferSize() const;
+
+protected:
+	virtual void Initialize(FSubsystemCollectionBase& Collection) override;
+	virtual void Deinitialize() override;
 
 private:
 	FTSTicker::FDelegateHandle TickHandle;
+	FTSTicker::FDelegateHandle DebugTickHandle;
+	
 };
-
-

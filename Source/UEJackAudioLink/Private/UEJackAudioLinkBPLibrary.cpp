@@ -61,4 +61,65 @@ bool UUEJackAudioLinkBPLibrary::IsClientConnected()
 	return false;
 }
 
+TArray<float> UUEJackAudioLinkBPLibrary::ReadAudioBuffer(int32 ChannelIndex, int32 NumSamples)
+{
+	if (GEngine)
+	{
+		if (UUEJackAudioLinkSubsystem* Subsys = GEngine->GetEngineSubsystem<UUEJackAudioLinkSubsystem>())
+		{
+			return Subsys->ReadAudioBuffer(ChannelIndex, NumSamples);
+		}
+	}
+	return TArray<float>();
+}
+
+bool UUEJackAudioLinkBPLibrary::WriteAudioBuffer(int32 ChannelIndex, const TArray<float>& AudioData)
+{
+	if (GEngine)
+	{
+		if (UUEJackAudioLinkSubsystem* Subsys = GEngine->GetEngineSubsystem<UUEJackAudioLinkSubsystem>())
+		{
+			return Subsys->WriteAudioBuffer(ChannelIndex, AudioData);
+		}
+	}
+	return false;
+}
+
+float UUEJackAudioLinkBPLibrary::GetInputLevel(int32 ChannelIndex)
+{
+	if (GEngine)
+	{
+		if (UUEJackAudioLinkSubsystem* Subsys = GEngine->GetEngineSubsystem<UUEJackAudioLinkSubsystem>())
+		{
+			return Subsys->GetInputLevel(ChannelIndex);
+		}
+	}
+	return 0.0f;
+}
+
+int32 UUEJackAudioLinkBPLibrary::GetSampleRate()
+{
+	if (GEngine)
+	{
+		if (UUEJackAudioLinkSubsystem* Subsys = GEngine->GetEngineSubsystem<UUEJackAudioLinkSubsystem>())
+		{
+			return Subsys->GetSampleRate();
+		}
+	}
+	return 0;
+}
+
+int32 UUEJackAudioLinkBPLibrary::GetBufferSize()
+{
+	if (GEngine)
+	{
+		if (UUEJackAudioLinkSubsystem* Subsys = GEngine->GetEngineSubsystem<UUEJackAudioLinkSubsystem>())
+		{
+			return Subsys->GetBufferSize();
+		}
+	}
+	return 0;
+}
+
+
 

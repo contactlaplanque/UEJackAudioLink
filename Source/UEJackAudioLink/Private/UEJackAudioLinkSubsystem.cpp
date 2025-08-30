@@ -2,7 +2,24 @@
 #include "JackServerController.h"
 #include "JackClientManager.h"
 #include "JackAudioLinkSettings.h"
+#include "UEJackAudioLinkLog.h"
 #include "Containers/Ticker.h"
+
+void UUEJackAudioLinkSubsystem::Initialize(FSubsystemCollectionBase& Collection)
+{
+	Super::Initialize(Collection);
+	UE_LOG(LogJackAudioLink, Log, TEXT("UEJackAudioLinkSubsystem initialized"));
+}
+
+void UUEJackAudioLinkSubsystem::Deinitialize()
+{
+	if (DebugTickHandle.IsValid())
+	{
+		FTSTicker::GetCoreTicker().RemoveTicker(DebugTickHandle);
+		DebugTickHandle.Reset();
+	}
+	Super::Deinitialize();
+}
 
 bool UUEJackAudioLinkSubsystem::RestartServer(int32 SampleRate, int32 BufferSize)
 {
@@ -55,56 +72,54 @@ bool UUEJackAudioLinkSubsystem::IsClientConnected() const
 #endif
 }
 
-void UUEJackAudioLinkSubsystem::StartAutoConnect(float IntervalSeconds, bool bEnable)
+// Audio I/O methods
+TArray<float> UUEJackAudioLinkSubsystem::ReadAudioBuffer(int32 ChannelIndex, int32 NumSamples)
 {
 #if WITH_JACK
-	if (!bEnable)
+	if (IsClientConnected())
 	{
-		StopAutoConnect();
-		return;
+		return FJackClientManager::Get().ReadAudioBuffer(ChannelIndex, NumSamples);
 	}
+#endif
+	return TArray<float>();
+}
 
-	if (TickHandle.IsValid())
+bool UUEJackAudioLinkSubsystem::WriteAudioBuffer(int32 ChannelIndex, const TArray<float>& AudioData)
+{
+#if WITH_JACK
+	if (IsClientConnected())
 	{
-		return;
+		return FJackClientManager::Get().WriteAudioBuffer(ChannelIndex, AudioData);
 	}
+#endif
+	return false;
+}
 
-	TickHandle = FTSTicker::GetCoreTicker().AddTicker(FTickerDelegate::CreateLambda([this, IntervalSeconds](float DeltaTime)
+float UUEJackAudioLinkSubsystem::GetInputLevel(int32 ChannelIndex) const
+{
+#if WITH_JACK
+	if (IsClientConnected())
 	{
-		if (!FJackClientManager::Get().IsConnected())
-		{
-			return true;
-		}
-		// Gather external clients
-		TArray<FString> Clients = FJackClientManager::Get().GetAllClients();
-		FString OurName = FJackClientManager::Get().GetClientName();
-		Clients.Remove(OurName);
-		Clients.Remove(TEXT("system"));
+		return FJackClientManager::Get().GetInputLevel(ChannelIndex);
+	}
+#endif
+	return 0.0f;
+}
 
-		TArray<FString> OurInputs = FJackClientManager::Get().GetInputPortNames();
-		for (const FString& Client : Clients)
-		{
-			TArray<FString> Outs = FJackClientManager::Get().GetClientOutputPorts(Client);
-			int32 Num = FMath::Min(Outs.Num(), OurInputs.Num());
-			for (int32 i = 0; i < Num; ++i)
-			{
-				FJackClientManager::Get().ConnectPorts(Outs[i], OurInputs[i]);
-			}
-		}
-		return true;
-	}), IntervalSeconds);
+int32 UUEJackAudioLinkSubsystem::GetSampleRate() const
+{
+#if WITH_JACK
+	return static_cast<int32>(FJackClientManager::Get().GetSampleRate());
+#else
+	return 0;
 #endif
 }
 
-void UUEJackAudioLinkSubsystem::StopAutoConnect()
+int32 UUEJackAudioLinkSubsystem::GetBufferSize() const
 {
 #if WITH_JACK
-	if (TickHandle.IsValid())
-	{
-		FTSTicker::GetCoreTicker().RemoveTicker(TickHandle);
-		TickHandle.Reset();
-	}
+	return static_cast<int32>(FJackClientManager::Get().GetBufferSize());
+#else
+	return 0;
 #endif
 }
-
-
