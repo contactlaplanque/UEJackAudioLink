@@ -8,10 +8,9 @@
 #include "Widgets/SBoxPanel.h"
 #include "Widgets/Input/SButton.h"
 #include "TimerManager.h"
-#include "LevelEditor.h"
-#include "WorkspaceMenuStructure.h"
-#include "WorkspaceMenuStructureModule.h"
-// #include "Engine/Engine.h" // not used here
+//#include "LevelEditor.h"
+//#include "WorkspaceMenuStructure.h"
+//#include "WorkspaceMenuStructureModule.h"
 #include "Misc/App.h"
 #include "Containers/Ticker.h"
 #include "UEJackAudioLinkLog.h"
@@ -600,6 +599,7 @@ FReply FUEJackAudioLinkModule::OnStartServerClicked()
 			UE_LOG(LogJackAudioLink, Display, TEXT("JACK server started successfully (%d Hz, %d frames)"), Settings->GetSampleRateValue(), Settings->GetBufferSizeValue());
 			// Immediately probe sentinel so UI reflects RUNNING without waiting for next tick
 			FJackServerMonitor::Get().RequestImmediateProbe();
+			/*
 			// Also schedule a couple of short delayed probes to catch the server becoming ready
 			if (GEditor)
 			{
@@ -615,6 +615,7 @@ FReply FUEJackAudioLinkModule::OnStartServerClicked()
 					UpdateStatusDisplay();
 				}), 0.75f, false);
 			}
+			*/
 		}
 		else
 		{
