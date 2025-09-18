@@ -1,56 +1,122 @@
 # UEJackAudioLink
 
-A JACK Audio Link plugin for Unreal Engine 5.6 providing:
+Realtime JACK Audio Link plugin for Unreal Engine 5.6
+
+[![License Badge](https://img.shields.io/badge/GNU_GPLv3-blue.svg?style=plastic&logo=gnu&label=license)](https://www.gnu.org/licenses/gpl-3.0.en.html)
+
+Pre-release prototype.
+
+---
+
+## Table of Contents
+
+- [Overview](#overview)
+- [Installation](#installation)
+- [Usage](#usage)
+- [API Reference](#api-reference)
+- [Port Name Format (JACK)](#port-name-format-jack)
+- [Build Notes](#build-notes)
+- [Credits and Support](#credits-and-support)
+- [License](#license)
+- [Notes](#notes)
+
+## Overview
+
+**UEJackAudioLink** provides a bridge between Unreal Engine 5.6 and the JACK audio server:
+
 - Server control and status (sample rate, buffer size, CPU load)
 - JACK client lifecycle (connect/disconnect, port auto-registration)
 - Audio I/O: read from JACK inputs, write to JACK outputs (ring buffers)
 - Client discovery, port listing, and patching (connect/disconnect ports)
 - Blueprint-accessible API and events for game logic
 
-## Blueprint API surface
+## Installation
 
-Subsystem: `UUEJackAudioLinkSubsystem` (Engine Subsystem)
+### Dependencies
+
+- Unreal Engine 5.6
+- JACK2 runtime; headers/libs for building
+  - Windows: JACK2 (ASIO), optionally VB-Audio Matrix ASIO for multi-channel
+  - macOS: JACK (or BlackHole as a system device) via CoreAudio
+  - Linux: JACK (jackd) with sufficient I/O channels
+
+### Windows
+
+1) Install JACK2 for Windows and ensure the ASIO device exposes enough channels.
+2) Optionally install VB-Audio Matrix ASIO to aggregate channels.
+3) Build your project with this plugin enabled. `WITH_JACK` is auto-detected when headers/libs are found (see Build Notes).
+
+### macOS
+
+1) Install JACK (e.g., via Homebrew) or set up BlackHole as a system device.
+2) Ensure your interface exposes required input/output channels.
+3) Build your project with the plugin enabled.
+
+### Linux
+
+1) Install JACK and the corresponding development packages.
+2) Configure a JACK session with the desired I/O channel counts.
+3) Build your project with the plugin enabled.
+
+## Usage
+
+### In Unreal Editor
+
+1) Acquire the engine subsystem:
+   - Blueprint: Get Engine Subsystem → `UEJackAudioLinkSubsystem`
+   - C++: `GEngine->GetEngineSubsystem<UUEJackAudioLinkSubsystem>()`
+2) Start or restart the JACK server with your desired sample rate and buffer size.
+3) Connect a JACK client with the number of input/output ports you need.
+4) Route JACK ports (either by full names or by index) to your hardware or other clients.
+5) Stream audio using `WriteAudioBuffer` and/or read with `ReadAudioBuffer`.
+
+## API Reference
+
+> [!NOTE]
+> A proper documentation will be available soon.
+
+### Subsystem: `UUEJackAudioLinkSubsystem` (Engine Subsystem)
 
 - Server/client
-  - RestartServer(SampleRate:int, BufferSize:int) -> bool
-  - ConnectClient(ClientName:string, NumInputs:int, NumOutputs:int) -> bool
-  - DisconnectClient()
-  - IsServerRunning() -> bool
-  - IsClientConnected() -> bool
-  - GetSampleRate() -> int
-  - GetBufferSize() -> int
-  - GetCpuLoad() -> float (0..100)
-  - GetJackClientName() -> string (this plugin's JACK client name)
+  - `RestartServer(SampleRate:int, BufferSize:int) -> bool`
+  - `ConnectClient(ClientName:string, NumInputs:int, NumOutputs:int) -> bool`
+  - `DisconnectClient()`
+  - `IsServerRunning() -> bool`
+  - `IsClientConnected() -> bool`
+  - `GetSampleRate() -> int`
+  - `GetBufferSize() -> int`
+  - `GetCpuLoad() -> float (0..100)`
+  - `GetJackClientName() -> string` (this plugin's JACK client name)
 
 - Audio I/O
-  - ReadAudioBuffer(Channel:int, NumSamples:int) -> float[]
-  - WriteAudioBuffer(Channel:int, AudioData: float[]) -> bool
-  - GetInputLevel(Channel:int) -> float (RMS approximation)
+  - `ReadAudioBuffer(Channel:int, NumSamples:int) -> float[]`
+  - `WriteAudioBuffer(Channel:int, AudioData: float[]) -> bool`
+  - `GetInputLevel(Channel:int) -> float` (RMS approximation)
 
 - Discovery
-  - GetConnectedClients() -> string[] (unique client names)
-  - GetClientPorts(ClientName:string, out InputPorts:string[], out OutputPorts:string[])
+  - `GetConnectedClients() -> string[]` (unique client names)
+  - `GetClientPorts(ClientName:string, out InputPorts:string[], out OutputPorts:string[])`
 
 - Routing (full names)
-  - ConnectPorts(SourceFullName:string, DestFullName:string) -> bool
-  - DisconnectPorts(SourceFullName:string, DestFullName:string) -> bool
+  - `ConnectPorts(SourceFullName:string, DestFullName:string) -> bool`
+  - `DisconnectPorts(SourceFullName:string, DestFullName:string) -> bool`
 
 - Routing (by client + port number)
-  - ConnectPortsByIndex(SourceType:EJackPortDirection, SourceClient:string, SourcePortNumber:int,
-                        DestType:EJackPortDirection,   DestClient:string,   DestPortNumber:int) -> bool
-  - DisconnectPortsByIndex(SourceType:EJackPortDirection, SourceClient:string, SourcePortNumber:int,
-                           DestType:EJackPortDirection,   DestClient:string,   DestPortNumber:int) -> bool
+  - `ConnectPortsByIndex(SourceType:EJackPortDirection, SourceClient:string, SourcePortNumber:int,`
+    `DestType:EJackPortDirection,   DestClient:string,   DestPortNumber:int) -> bool`
+  - `DisconnectPortsByIndex(SourceType:EJackPortDirection, SourceClient:string, SourcePortNumber:int,`
+    `DestType:EJackPortDirection,   DestClient:string,   DestPortNumber:int) -> bool`
 
 - Events
-  - OnNewJackClientConnected(ClientName:string, NumInputPorts:int, NumOutputPorts:int)
-  - OnJackClientDisconnected(ClientName:string)
+  - `OnNewJackClientConnected(ClientName:string, NumInputPorts:int, NumOutputPorts:int)`
+  - `OnJackClientDisconnected(ClientName:string)`
 
 Blueprint function library: `UUEJackAudioLinkBPLibrary` mirrors the same calls as static nodes.
 
-## C++ API usage
+### C++ API Usage
 
 Linking and includes
-- In your .Build.cs: add "UEJackAudioLink" to your dependency module names.
+- In your `.Build.cs`: add `UEJackAudioLink` to your dependency module names.
 - Includes you’ll typically need:
   - `#include "UEJackAudioLinkSubsystem.h"`
   - Optional utilities/logs: `#include "UEJackAudioLinkLog.h"`
@@ -77,10 +143,10 @@ Core calls (selected)
 - Routing
   - `bool ConnectPorts(const FString& SourceFullName, const FString& DestFullName);`
   - `bool DisconnectPorts(const FString& SourceFullName, const FString& DestFullName);`
-  - `bool ConnectPortsByIndex(EJackPortDirection SrcType, const FString& SrcClient, int32 SrcPortNumber,
-                              EJackPortDirection DstType, const FString& DstClient, int32 DstPortNumber);`
-  - `bool DisconnectPortsByIndex(EJackPortDirection SrcType, const FString& SrcClient, int32 SrcPortNumber,
-                                 EJackPortDirection DstType, const FString& DstClient, int32 DstPortNumber);`
+  - `bool ConnectPortsByIndex(EJackPortDirection SrcType, const FString& SrcClient, int32 SrcPortNumber,`
+                              `EJackPortDirection DstType, const FString& DstClient, int32 DstPortNumber);`
+  - `bool DisconnectPortsByIndex(EJackPortDirection SrcType, const FString& SrcClient, int32 SrcPortNumber,`
+                                 `EJackPortDirection DstType, const FString& DstClient, int32 DstPortNumber);`
 - Audio I/O
   - `TArray<float> ReadAudioBuffer(int32 Channel, int32 NumSamples) const;`
   - `bool WriteAudioBuffer(int32 Channel, const TArray<float>& AudioData);`
@@ -95,103 +161,42 @@ Threading notes
 - Call routing, discovery, and server/client methods on the game thread.
 - Writing/reading the audio buffers should be done regularly (e.g., in Tick or a timer) to avoid underflows; keep chunks near the JACK buffer size for best latency.
 
-## Port name format (JACK)
 
-Full port names are "client_name:port_short_name". Examples:
-- system:capture_1, system:capture_2 (hardware inputs)
-- system:playback_1, system:playback_2 (hardware outputs)
-- Unreal client ports from this plugin default to short names "unreal_in_X" and "unreal_out_X".
+## Port Name Format (JACK)
+
+Full port names are `client_name:port_short_name`. Examples:
+- `system:capture_1`, `system:capture_2` (hardware inputs)
+- `system:playback_1`, `system:playback_2` (hardware outputs)
+- Unreal client ports from this plugin default to short names `unreal_in_X` and `unreal_out_X`.
 
 When connecting:
 - Source must be an output port; destination must be an input port.
-- Example: system:capture_1 -> UnrealJackClient-Project:unreal_in_1
-- Example: UnrealJackClient-Project:unreal_out_1 -> system:playback_1
+- Example: `system:capture_1 -> UnrealJackClient-Project:unreal_in_1`
+- Example: `UnrealJackClient-Project:unreal_out_1 -> system:playback_1`
 
-## Testing WriteAudioBuffer (sending audio to JACK)
+## Build Notes
+- `WITH_JACK` is auto-enabled if headers/libs are found (`JACK_SDK_ROOT` or default Windows JACK2 path). Otherwise the API compiles but returns defaults.
 
-WriteAudioBuffer fills an internal ring buffer that the JACK process callback reads each audio cycle. To hear output:
 
-1) Ensure your Unreal JACK client has at least one output port registered
-   - ConnectClient(ClientName, NumInputs, NumOutputs) with NumOutputs >= 1
-   - Confirm with GetClientPorts(GetJackClientName(), Inputs, Outputs) and connect
-     Outputs[0] -> system:playback_1 (and Outputs[1] -> system:playback_2 for stereo)
+## Credits and Support
 
-2) Feed audio samples each tick (or with a timer)
-   - Typical sample format: float in [-1..1]
-   - Buffer size: you can push chunks matching JACK buffer size, or any multiple; the ring buffer will stream them out
+aKM is a project developped within _laplanque_, a non-profit for artistic
+creation and the sharing of expertise, bringing together multifaceted artists working in both analog and digital media.
 
-3) Simple Blueprint test (sine beep)
-   - Get Sample Rate (SR)
-   - Keep a phase accumulator (float) in your actor
-   - On Tick (DeltaSeconds), generate N samples at 440Hz:
-     - N = round(SR * DeltaSeconds) (clamp 64..4096 to avoid too-small/large bursts)
-     - For i in 0..N-1: sample = sin(2*pi*440 * (phase + i)/SR)
-     - Build a float array; call WriteAudioBuffer(Channel=0, AudioData=array)
-     - Update phase += N; wrap phase by SR to avoid growth
-   - Connect your Unreal out_1 to system:playback_1 and listen
+More details: [WEBSITE](https://laplanque.eu/) / [DISCORD](https://discord.gg/c7PK5h3PKE) / [INSTAGRAM](https://www.instagram.com/contact.laplanque/)
 
-4) Simple C++ test snippet (inside a tick component)
-   - Query SR via subsystem
-   - Generate a small buffer (e.g., 256 samples) per tick and call WriteAudioBuffer(0, Buffer)
+- The aKM Project is developped by: Vincent Bergeron, Samy Bérard, Nicolas Désilles
+- Software design and development: [Nicolas Désilles](https://github.com/nicolasdesilles). 
 
-Notes:
-- If you underflow (not writing fast enough), output will be silence for missing samples; logs may show xruns depending on system.
-- To stream an audio file:
-  - Use UE’s `USoundWave` to PCM decode or `Audio::Transcoder` in runtime audio mixer (platform dependent)
-  - Retrieve PCM float samples (convert 16-bit to float if needed)
-  - Write chunks sequentially via WriteAudioBuffer for each output channel
-- Channel mapping:
-  - Channel index 0 -> unreal_out_1, 1 -> unreal_out_2, etc.
+- Supporters: La Région AURA, GRAME CNCM, la Métropole de Lyon, Hangar Computer Club, and private contributors
 
-## Troubleshooting
-- No sound:
-  - Verify ConnectClient succeeded and output ports exist
-  - Connect plugin output ports to system:playback_X
-  - Confirm CPU load not pegged and buffer size sane
-- Distorted/stuttering:
-  - Ensure steady writes near the JACK callback cadence (use smaller chunks, e.g., 128–512 samples)
-  - Watch the log for xruns and CPU load spikes
-- Port by index fails:
-  - Use GetConnectedClients/GetClientPorts to confirm available ports, and pass 1-based port numbers
+![logos-partenaires](https://laplanque.eu/wp-content/uploads/2025/07/LOGO-partenaire-siteweb.png)
 
-## Build notes
-- WITH_JACK is auto-enabled if headers/libs are found (JACK_SDK_ROOT or default Windows JACK2 path). Otherwise the API compiles but returns defaults.
+## License
 
-## How to play sound by writing to the audio buffers from UE
+GNU GPL‑3.0. See `LICENSE`.
 
-This pattern shows how to tap a UE submix in real time and forward its audio to JACK outputs using this plugin. It’s minimal and does not cover connection/patching, only getting buffers out of a submix and into the plugin’s ring buffers.
+## Notes
+- Sample rate mismatches between UE and JACK are not automatically resampled by this plugin.
+- Keep `WriteAudioBuffer` chunk sizes near the JACK buffer size for best latency.
 
-Key idea
-- Use UE 5.6’s ISubmixBufferListener on the Audio Mixer to receive interleaved float audio from a chosen `USoundSubmix`.
-- Keep the listener as a lightweight, non-UObject C++ class owned by your Actor as a `TSharedPtr`/`TSharedRef` (thread-safe), and forward buffers back to the Actor for processing.
-- In the Actor, deinterleave per channel and call `UUEJackAudioLinkSubsystem::WriteAudioBuffer(Channel, Samples)`.
-
-Minimal flow
-1) Actor setup (BeginPlay)
-  - Get the subsystem: `GEngine->GetEngineSubsystem<UUEJackAudioLinkSubsystem>()`.
-  - Ensure a JACK client is connected with enough output ports (e.g., stereo `NumOutputs = 2`).
-  - Create a `TSharedRef` listener object implementing `ISubmixBufferListener`.
-  - Get the active `Audio::FMixerDevice` and register: `RegisterSubmixBufferListener(ListenerRef, *SourceSubmix)`.
-
-2) Listener callback (audio render thread)
-  - `OnNewSubmixBuffer(const USoundSubmix*, float* AudioData, int32 NumSamples, int32 NumChannels, const int32 SampleRate, double AudioClock)`
-  - Immediately forward to the Actor: `Owner->ProcessAudioBuffer(...)`.
-
-3) Actor processing
-  - Compute `NumFrames = NumSamples / NumChannels`.
-  - For each channel `c` up to the number of JACK outputs:
-    - Deinterleave: copy samples `AudioData[c + i*NumChannels]` for `i ∈ [0..NumFrames-1]` to a temporary `TArray<float>`.
-    - Optionally apply gain.
-    - Call `Subsystem->WriteAudioBuffer(c, ChannelBuffer)`.
-
-4) Cleanup (EndPlay)
-  - `UnregisterSubmixBufferListener(ListenerRef, *SourceSubmix)` and release the shared pointer.
-
-Notes and tips
-- UE submix buffers are interleaved; JACK plugin outputs are per-channel ring buffers, so deinterleave before writing.
-- Threading: the callback runs on the audio render thread—avoid heavy work; preallocate/reuse scratch buffers where possible.
-- Sample rate: if the submix SR differs from JACK SR, you’ll get a mismatch; this simple pattern does not resample.
-- Channel mapping: UE channel 0 → plugin `unreal_out_1`, channel 1 → `unreal_out_2`, etc. Ensure the JACK client was created with at least that many outputs.
-- Safety: never hold `AudioData` beyond the callback; copy what you need right away.
-
-This approach keeps your gameplay logic in the Actor while using a dedicated listener to integrate safely with the Audio Mixer in UE 5.6.
